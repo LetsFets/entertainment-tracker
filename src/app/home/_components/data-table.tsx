@@ -100,7 +100,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { NewSectionDialog } from "./new-section-dialog";
+import { NewSectionDialog } from "./new-entry-dialog";
 import { useActionState } from "react";
 import { deleteSection } from "@/actions/delete-section";
 import { Loader2Icon } from "lucide-react";
