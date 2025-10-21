@@ -1,51 +1,122 @@
-// app/home/page.tsx
 "use client";
 
-import { LogOut } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { CategoryTabs } from "./_components/category-tabs";
+import { useState, useEffect } from "react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { NewEntryForm, type Category, type MediaEntry } from "./_components/new-entry-form";
+import { EntryList } from "./_components/entry-list";
 
-export default function Page() {
-  const router = useRouter();
+const categories: { value: Category; label: string }[] = [
+  { value: "books", label: "Bücher" },
+  { value: "series", label: "Serien" },
+  { value: "movies", label: "Filme" },
+  { value: "videogames", label: "Videospiele" },
+  { value: "podcasts", label: "Podcasts" },
+];
 
-  const handleLogout = async () => {
+const STORAGE_KEY = "media-tracker-entries";
+
+export default function HomePage() {
+  const [entries, setEntries] = useState<MediaEntry[]>([]);
+  const [activeCategory, setActiveCategory] = useState<Category>("books");
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<MediaEntry | undefined>(undefined);
+
+  useEffect(() => {
     try {
-      await fetch("/api/auth/logout", {
-        method: "POST",
-        credentials: "include",
-      });
-
-      localStorage.clear();
-      router.push("/login");
+      const stored = sessionStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const entriesWithDates = parsed.map((entry: any) => ({
+          ...entry,
+          createdAt: new Date(entry.createdAt),
+        }));
+        setEntries(entriesWithDates);
+      }
     } catch (error) {
-      console.error("Logout fehlgeschlagen:", error);
-      router.push("/login");
+      console.error("Fehler beim Laden der Daten:", error);
+    } finally {
+      setIsLoaded(true);
     }
+  }, []);
+
+  useEffect(() => {
+    if (isLoaded) {
+      try {
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+      } catch (error) {
+        console.error("Fehler beim Speichern der Daten:", error);
+      }
+    }
+  }, [entries, isLoaded]);
+
+  const handleEntryCreated = (entry: MediaEntry) => {
+    setEntries([entry, ...entries]);
   };
 
-  return (
-    <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="flex h-14 items-center px-4 lg:px-6">
-          <div className="flex-1">
-            <h1 className="text-lg font-semibold">Meine App</h1>
-          </div>
-          <div className="flex items-center gap-4">
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-2 p-2 rounded-md hover:bg-accent transition-colors text-foreground"
-              aria-label="Abmelden"
-            >
-              <LogOut className="h-5 w-5" />
-              <span className="text-sm font-medium">Abmelden</span>
-            </button>
-          </div>
-        </div>
-      </header>
+  const handleEntryUpdated = (updatedEntry: MediaEntry) => {
+    setEntries(entries.map(e => e.id === updatedEntry.id ? updatedEntry : e));
+    setEditingEntry(undefined);
+  };
 
-      <main className="container mx-auto p-4 lg:p-6">
-        <CategoryTabs />
-      </main>
+  const handleDelete = (id: string) => {
+    setEntries(entries.filter((e) => e.id !== id));
+  };
+
+  const handleEdit = (entry: MediaEntry) => {
+    setEditingEntry(entry);
+    // Scroll zum Formular
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingEntry(undefined);
+  };
+
+  const filteredEntries = entries.filter((e) => e.category === activeCategory);
+
+  if (!isLoaded) {
+    return (
+      <div className="container mx-auto p-6">
+        <p className="text-center">Lade Daten...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container mx-auto p-6">
+      <h1 className="text-3xl font-bold mb-6">Media Tracker</h1>
+
+      <Tabs value={activeCategory} onValueChange={(v) => {
+        setActiveCategory(v as Category);
+        setEditingEntry(undefined); // Reset edit mode beim Tab-Wechsel
+      }}>
+        <TabsList className="grid w-full grid-cols-5">
+          {categories.map((cat) => (
+            <TabsTrigger key={cat.value} value={cat.value}>
+              {cat.label} ({entries.filter(e => e.category === cat.value).length})
+            </TabsTrigger>
+          ))}
+        </TabsList>
+
+        {categories.map((cat) => (
+          <TabsContent key={cat.value} value={cat.value} className="mt-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <NewEntryForm 
+                category={cat.value} 
+                onEntryCreated={handleEntryCreated}
+                onEntryUpdated={handleEntryUpdated}
+                editingEntry={activeCategory === cat.value ? editingEntry : undefined}
+                onCancelEdit={handleCancelEdit}
+              />
+              <EntryList 
+                entries={filteredEntries} 
+                onDelete={handleDelete}
+                onEdit={handleEdit}
+              />
+            </div>
+          </TabsContent>
+        ))}
+      </Tabs>
     </div>
   );
 }
