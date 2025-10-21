@@ -50,10 +50,33 @@ export default function HomePage() {
   }, [entries, isLoaded]);
 
   const handleEntryCreated = (entry: MediaEntry) => {
+    // Prüfe auf Duplikate
+    const isDuplicate = entries.some(
+      e => e.title.toLowerCase().trim() === entry.title.toLowerCase().trim() 
+      && e.category === entry.category
+    );
+    
+    if (isDuplicate) {
+      alert(`Ein Eintrag mit dem Titel "${entry.title}" existiert bereits in dieser Kategorie!`);
+      return;
+    }
+    
     setEntries([entry, ...entries]);
   };
 
   const handleEntryUpdated = (updatedEntry: MediaEntry) => {
+    // Prüfe auf Duplikate (außer der Eintrag selbst)
+    const isDuplicate = entries.some(
+      e => e.id !== updatedEntry.id 
+      && e.title.toLowerCase().trim() === updatedEntry.title.toLowerCase().trim() 
+      && e.category === updatedEntry.category
+    );
+    
+    if (isDuplicate) {
+      alert(`Ein anderer Eintrag mit dem Titel "${updatedEntry.title}" existiert bereits in dieser Kategorie!`);
+      return;
+    }
+    
     setEntries(entries.map(e => e.id === updatedEntry.id ? updatedEntry : e));
     setEditingEntry(undefined);
   };
@@ -64,7 +87,6 @@ export default function HomePage() {
 
   const handleEdit = (entry: MediaEntry) => {
     setEditingEntry(entry);
-    // Scroll zum Formular
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -88,7 +110,7 @@ export default function HomePage() {
 
       <Tabs value={activeCategory} onValueChange={(v) => {
         setActiveCategory(v as Category);
-        setEditingEntry(undefined); // Reset edit mode beim Tab-Wechsel
+        setEditingEntry(undefined);
       }}>
         <TabsList className="grid w-full grid-cols-5">
           {categories.map((cat) => (
@@ -100,13 +122,17 @@ export default function HomePage() {
 
         {categories.map((cat) => (
           <TabsContent key={cat.value} value={cat.value} className="mt-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="space-y-6">
               <NewEntryForm 
                 category={cat.value} 
                 onEntryCreated={handleEntryCreated}
                 onEntryUpdated={handleEntryUpdated}
                 editingEntry={activeCategory === cat.value ? editingEntry : undefined}
                 onCancelEdit={handleCancelEdit}
+                existingTitles={entries
+                  .filter(e => e.category === cat.value)
+                  .map(e => e.title)
+                }
               />
               <EntryList 
                 entries={filteredEntries} 

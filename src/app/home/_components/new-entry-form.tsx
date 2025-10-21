@@ -95,6 +95,7 @@ interface NewEntryFormProps {
   onEntryUpdated: (entry: MediaEntry) => void;
   editingEntry?: MediaEntry;
   onCancelEdit?: () => void;
+  existingTitles?: string[];
 }
 
 export function NewEntryForm({ 
@@ -102,7 +103,8 @@ export function NewEntryForm({
   onEntryCreated, 
   onEntryUpdated,
   editingEntry,
-  onCancelEdit 
+  onCancelEdit,
+  existingTitles = [] 
 }: NewEntryFormProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [title, setTitle] = useState("");
@@ -120,6 +122,10 @@ export function NewEntryForm({
 
   const availableFields = categoryFields[category];
   const isEditing = !!editingEntry;
+
+  const titleExists = !isEditing && existingTitles.some(
+    t => t.toLowerCase().trim() === title.toLowerCase().trim()
+  );
 
   useEffect(() => {
     if (editingEntry) {
@@ -392,7 +398,13 @@ export function NewEntryForm({
               placeholder="Titel eingeben..."
               required
               disabled={pending}
+              className={titleExists ? "border-destructive" : ""}
             />
+            {titleExists && (
+              <p className="text-sm text-destructive">
+                ⚠️ Ein Eintrag mit diesem Titel existiert bereits in dieser Kategorie!
+              </p>
+            )}
           </div>
 
           {/* Bild Upload */}
