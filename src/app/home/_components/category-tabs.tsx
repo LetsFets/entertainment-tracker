@@ -1,11 +1,9 @@
-// components/category-tabs.tsx
+// src/app/home/_components/category-tabs.tsx
 "use client";
 
 import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { NewEntryDialog } from "./new-entry-dialog";
-import { Button } from "@/components/ui/button";
-import { Plus as IconPlus } from "lucide-react";
+import { NewEntryForm } from "./new-entry-form";
 
 type Category = "books" | "series" | "movies" | "videogames" | "podcasts";
 
@@ -31,14 +29,21 @@ export function CategoryTabs() {
       </TabsList>
 
       {categories.map((cat) => (
-        <TabsContent key={cat.value} value={cat.value} className="mt-4">
-          <div className="space-y-4">
-            <NewEntryDialog category={cat.value}>
-              <Button>
-                <IconPlus className="mr-2 h-4 w-4" />
-                Neuer Eintrag
-              </Button>
-            </NewEntryDialog>
+        <TabsContent key={cat.value} value={cat.value} className="mt-6">
+          <div className="space-y-6">
+            <NewEntryForm
+              category={cat.value}
+              onEntryCreated={(entry) => {
+                // handle the created entry here (e.g., add to a list or show a message)
+                // For now, just log it:
+                console.log("Entry created:", entry);
+              }}
+              onEntryUpdated={(entry) => {
+                // handle the updated entry here (e.g., update a list or show a message)
+                // For now, just log it:
+                console.log("Entry updated:", entry);
+              }}
+            />
             
             {/* Hier kommt die Liste der Einträge */}
             <div className="grid gap-4">
