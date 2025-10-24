@@ -10,6 +10,8 @@ import { IconPlus, IconX, IconPhoto, IconDeviceFloppy } from "@tabler/icons-reac
 import { useState, useRef, useEffect } from "react";
 import { Loader2Icon } from "lucide-react";
 import Image from "next/image";
+import {EntryData} from "../../../lib/types";
+import { createEntry } from "../../../actions/create-entry";
 
 export type Category = "books" | "series" | "movies" | "videogames" | "podcasts";
 
@@ -120,19 +122,12 @@ export function NewEntryForm({
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const availableFields = categoryFields[category];
-  const isEditing = !!editingEntry;
+const availableFields = categoryFields[category];
+const isEditing = !!editingEntry;
 
-  const titleExists = !isEditing && existingTitles.some(
-    t => t.toLowerCase().trim() === title.toLowerCase().trim()
-  );
-  // Annahme: categoryFields ist im Scope definiert
-  const availableFields = categoryFields[category]; 
-  const isEditing = !!editingEntry;
-
-  const titleExists = !isEditing && existingTitles.some(
-    t => t.toLowerCase().trim() === title.toLowerCase().trim()
-  );
+const titleExists = !isEditing && existingTitles.some(
+  t => t.toLowerCase().trim() === title.toLowerCase().trim()
+);
 
   useEffect(() => {
     if (editingEntry) {
@@ -1121,3 +1116,120 @@ export function NewEntryForm({
     </Card>
   );
 }
+
+
+/*
+Die Änderungen hier müssen noch eingearbeitet werden, ich will aber nicht, dass der Code noch verloren geht:
+ich hoffe die änderungen helfen was ;-;
+
+
+
+// ...existing code...
+  const table = dbSchema[category];
+  if (!table) {
+    throw new Error(`Unbekannte Kategorie: ${category}`);
+  }
+// ...existing code...
+-  const tableName = table._.config.name;
++  // Fallback: benutze verschiedene mögliche Orte für den Tabellennamen
++  const tableName =
++    (table as any)?._?.config?.name ??
++    (table as any).tableName ??
++    (table as any).name;
+  try {
+    // 2. Schema-Introspektion: Aktuelle Spaltennamen abrufen
+// ...existing code...
+
+------
+
+import { NextResponse } from "next/server";
+import { createOrUpdateDynamicEntry } from "@/app/home/_components/sqlite-entries";
+// WICHTIG: Ersetze den Import / die Initialisierung durch deine tatsächliche Drizzle DB-Instanz.
+// Beispiel: import { db } from "@/lib/db";
+import { getDrizzleDbInstance } from "@/lib/db"; // <-- anpassen / ersetzen
+
+export async function POST(req: Request) {
+  try {
+    const data = await req.json();
+
+    // Hole hier deine echte Drizzle/SQLite-DB-Instanz.
+    // Implementiere getDrizzleDbInstance() in src/lib/db.ts oder passe diesen Aufruf an.
+    const db = getDrizzleDbInstance();
+
+    const result = await createOrUpdateDynamicEntry(db, data);
+    return NextResponse.json({ success: true, result });
+  } catch (error) {
+    console.error("API /api/entries Fehler:", error);
+    return NextResponse.json({ success: false, error: (error as Error).message }, { status: 500 });
+  }
+}
+
+------
+
+// ...existing code...
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPending(true);
+
+    const cleanedFields: Record<string, string | string[]> = {};
+    Object.entries(categorySpecificFields).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        const filtered = value.filter(v => v.trim() !== "");
+        if (filtered.length > 0) {
+          cleanedFields[key] = filtered;
+        }
+      } else if (value && value.trim() !== "") {
+        cleanedFields[key] = value;
+      }
+    });
+
+    if (category === "series" && seasons.length > 0) {
+      cleanedFields["Staffeln"] = JSON.stringify(seasons);
+    }
+
+    const entryData: MediaEntry = {
+      id: isEditing ? editingEntry.id : crypto.randomUUID(),
+      category,
+      title,
+      image,
+      categorySpecificFields: cleanedFields,
+      customFields: customFields.filter(f => f.name && f.value).map(({ name, value }) => ({ name, value })),
+      readingSessions: category === "books" && readingSessions.length > 0 ? readingSessions : undefined,
+      gamingSessions: category === "videogames" && gamingSessions.length > 0 ? gamingSessions : undefined,
+      completed,
+      abandoned,
+      createdAt: isEditing ? editingEntry.createdAt : new Date(),
+    };
+
+    try {
+      // POST an die Server-API, die createOrUpdateDynamicEntry verwendet
+      const res = await fetch("/api/entries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(entryData),
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json?.success) {
+        console.error("Server-Fehler beim Speichern:", json);
+        throw new Error(json?.error || "Server-Fehler beim Speichern des Eintrags");
+      }
+
+      // UI-Callback erst nach erfolgreichem Speichern auf dem Server aufrufen
+      if (isEditing) {
+        onEntryUpdated(entryData);
+      } else {
+        onEntryCreated(entryData);
+      }
+
+      resetForm();
+    } catch (error) {
+      console.error("Fehler beim Speichern:", error);
+      alert("Fehler beim Speichern. Siehe Konsole für Details.");
+    } finally {
+      setPending(false);
+    }
+  };
+// ...existing code...
+
+*/
