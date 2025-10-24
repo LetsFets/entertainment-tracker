@@ -106,19 +106,19 @@ export function NewEntryForm({
   onCancelEdit,
   existingTitles = [] 
 }: NewEntryFormProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [title, setTitle] = useState("");
-  const [image, setImage] = useState<string | undefined>(undefined);
-  const [categorySpecificFields, setCategorySpecificFields] = useState<Record<string, string | string[]>>({});
-  const [customFields, setCustomFields] = useState<CustomField[]>([]);
-  const [completed, setCompleted] = useState(false);
-  const [abandoned, setAbandoned] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [seasons, setSeasons] = useState<{ seasonNumber: number; episodes: number }[]>([]);
-  const [readingSessions, setReadingSessions] = useState<ReadingSession[]>([]);
-  const [gamingSessions, setGamingSessions] = useState<GamingSession[]>([]);
-  
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [title, setTitle] = useState("");
+  const [image, setImage] = useState<string | undefined>(undefined);
+  const [categorySpecificFields, setCategorySpecificFields] = useState<Record<string, string | string[]>>({});
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const [completed, setCompleted] = useState(false);
+  const [abandoned, setAbandoned] = useState(false);
+  const [pending, setPending] = useState(false); // Wird für den Ladezustand verwendet
+  const [seasons, setSeasons] = useState<{ seasonNumber: number; episodes: number }[]>([]);
+  const [readingSessions, setReadingSessions] = useState<ReadingSession[]>([]);
+  const [gamingSessions, setGamingSessions] = useState<GamingSession[]>([]);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const availableFields = categoryFields[category];
   const isEditing = !!editingEntry;
@@ -126,241 +126,282 @@ export function NewEntryForm({
   const titleExists = !isEditing && existingTitles.some(
     t => t.toLowerCase().trim() === title.toLowerCase().trim()
   );
+  // Annahme: categoryFields ist im Scope definiert
+  const availableFields = categoryFields[category]; 
+  const isEditing = !!editingEntry;
 
-  useEffect(() => {
-    if (editingEntry) {
-      setIsExpanded(true);
-      setTitle(editingEntry.title);
-      setImage(editingEntry.image);
-      setCategorySpecificFields(editingEntry.categorySpecificFields);
-      setCustomFields(
-        editingEntry.customFields.map(f => ({ ...f, id: crypto.randomUUID() }))
-      );
-      setCompleted(editingEntry.completed);
-      setAbandoned(editingEntry.abandoned);
-      
-      if (editingEntry.readingSessions) {
-        setReadingSessions(editingEntry.readingSessions);
-      }
-      
-      if (editingEntry.gamingSessions) {
-        setGamingSessions(editingEntry.gamingSessions);
-      }
-      
-      const staffelnData = editingEntry.categorySpecificFields["Staffeln"];
-      if (typeof staffelnData === "string") {
-        try {
-          const parsed = JSON.parse(staffelnData);
-          if (Array.isArray(parsed)) {
-            setSeasons(parsed);
-          }
-        } catch (e) {
-          console.error("Fehler beim Parsen der Staffel-Daten", e);
+  const titleExists = !isEditing && existingTitles.some(
+    t => t.toLowerCase().trim() === title.toLowerCase().trim()
+  );
+
+  useEffect(() => {
+    if (editingEntry) {
+      setIsExpanded(true);
+      setTitle(editingEntry.title);
+      setImage(editingEntry.image);
+      setCategorySpecificFields(editingEntry.categorySpecificFields);
+      setCustomFields(
+        editingEntry.customFields.map(f => ({ ...f, id: crypto.randomUUID() }))
+      );
+      setCompleted(editingEntry.completed);
+      setAbandoned(editingEntry.abandoned);
+      
+      if (editingEntry.readingSessions) {
+        setReadingSessions(editingEntry.readingSessions);
+      }
+      
+      if (editingEntry.gamingSessions) {
+        setGamingSessions(editingEntry.gamingSessions);
+      }
+      
+      const staffelnData = editingEntry.categorySpecificFields["Staffeln"];
+      if (typeof staffelnData === "string") {
+        try {
+          const parsed = JSON.parse(staffelnData);
+          if (Array.isArray(parsed)) {
+            setSeasons(parsed);
+          }
+        } catch (e) {
+          console.error("Fehler beim Parsen der Staffel-Daten", e);
+        }
+      }
+    }
+  }, [editingEntry]);
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Bild ist zu groß! Maximal 5MB erlaubt.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImage(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeImage = () => {
+    setImage(undefined);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const addCustomField = () => {
+    setCustomFields([
+      ...customFields,
+      { id: crypto.randomUUID(), name: "", value: "" },
+    ]);
+  };
+
+  const updateCustomField = (id: string, field: "name" | "value", newValue: string) => {
+    setCustomFields(
+      customFields.map((f) => (f.id === id ? { ...f, [field]: newValue } : f))
+    );
+  };
+
+  const removeCustomField = (id: string) => {
+    setCustomFields(customFields.filter((f) => f.id !== id));
+  };
+
+  const addSeason = () => {
+    setSeasons([...seasons, { seasonNumber: seasons.length + 1, episodes: 0 }]);
+  };
+
+  const updateSeasonEpisodes = (seasonNumber: number, episodes: number) => {
+    setSeasons(seasons.map(s => 
+      s.seasonNumber === seasonNumber ? { ...s, episodes } : s
+    ));
+  };
+
+  const removeSeason = (seasonNumber: number) => {
+    setSeasons(seasons.filter(s => s.seasonNumber !== seasonNumber)
+      .map((s, idx) => ({ ...s, seasonNumber: idx + 1 })));
+  };
+
+  const addReadingSession = () => {
+    setReadingSessions([
+      ...readingSessions,
+      { id: crypto.randomUUID(), pages: 0 }
+    ]);
+  };
+
+  const updateReadingSession = (id: string, field: keyof ReadingSession, value: number | undefined) => {
+    setReadingSessions(readingSessions.map(s => 
+      s.id === id ? { ...s, [field]: value } : s
+    ));
+  };
+
+  const removeReadingSession = (id: string) => {
+    setReadingSessions(readingSessions.filter(s => s.id !== id));
+  };
+
+  const addGamingSession = () => {
+    setGamingSessions([
+      ...gamingSessions,
+      { id: crypto.randomUUID(), duration: 0 }
+    ]);
+  };
+
+  const updateGamingSession = (id: string, field: keyof GamingSession, value: number | undefined) => {
+    setGamingSessions(gamingSessions.map(s => 
+      s.id === id ? { ...s, [field]: value } : s
+    ));
+  };
+
+  const removeGamingSession = (id: string) => {
+    setGamingSessions(gamingSessions.filter(s => s.id !== id));
+  };
+
+  const addMultiValue = (fieldName: string) => {
+    const current = categorySpecificFields[fieldName] as string[] || [];
+    setCategorySpecificFields({
+      ...categorySpecificFields,
+      [fieldName]: [...current, ""],
+    });
+  };
+
+  const updateMultiValue = (fieldName: string, index: number, value: string) => {
+    const current = categorySpecificFields[fieldName] as string[] || [];
+    const updated = [...current];
+    updated[index] = value;
+    setCategorySpecificFields({
+      ...categorySpecificFields,
+      [fieldName]: updated,
+    });
+  };
+
+  const removeMultiValue = (fieldName: string, index: number) => {
+    const current = categorySpecificFields[fieldName] as string[] || [];
+    setCategorySpecificFields({
+      ...categorySpecificFields,
+      [fieldName]: current.filter((_, i) => i !== index),
+    });
+  };
+
+  const getMultiValues = (fieldName: string): string[] => {
+    const value = categorySpecificFields[fieldName];
+    if (Array.isArray(value)) return value;
+    return [];
+  };
+
+  const handleNumberInput = (fieldName: string, value: string) => {
+    const sanitized = value.replace(/[^0-9]/g, '');
+    setCategorySpecificFields({
+      ...categorySpecificFields,
+      [fieldName]: sanitized,
+    });
+  };
+
+  const validateTextInput = (value: string): boolean => {
+    return /^[a-zA-ZäöüÄÖÜß0-9\s\-.,]*$/.test(value);
+  };
+
+// ---------------------------------------------------------------------------------
+// START: HIER IST DIE WESENTLICHE ÄNDERUNG (handleSubmit)
+// ---------------------------------------------------------------------------------
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPending(true); // Startet den Ladezustand
+
+    // 1. Datenbereinigung und Vorbereitung
+    const cleanedFields: Record<string, string | string[]> = {};
+    Object.entries(categorySpecificFields).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        const filtered = value.filter(v => v.trim() !== "");
+        if (filtered.length > 0) {
+          cleanedFields[key] = filtered;
+        }
+      } else if (value && value.trim() !== "") {
+        cleanedFields[key] = value;
+      }
+    });
+
+    // Staffel-Daten serialisieren
+    if (category === "series" && seasons.length > 0) {
+      cleanedFields["Staffeln"] = JSON.stringify(seasons);
+    }
+
+    // Erstellung des EntryData-Objekts für die Server Action
+    const entryData: EntryData & { id?: string } = {
+      category,
+      title,
+      image,
+      categorySpecificFields: cleanedFields,
+      customFields: customFields.filter(f => f.name && f.value).map(({ id, name, value }) => ({ id, name, value })),
+      readingSessions: category === "books" && readingSessions.length > 0 ? readingSessions : undefined,
+      gamingSessions: category === "videogames" && gamingSessions.length > 0 ? gamingSessions : undefined,
+      completed,
+      abandoned,
+      // Füge die ID nur hinzu, wenn es sich um ein Update handelt
+      id: isEditing ? editingEntry!.id : undefined,
+    };
+
+    try {
+        // 2. DATENBANK-AKTION: Aufruf der Server Action
+        const result = await createEntry(entryData);
+
+        if (result.success) {
+            // Die endgültige ID (bestehend oder neu vom Server)
+            const finalId = result.id || entryData.id!;
+            
+            // Erstelle das vollständige Objekt, das an die Callback-Props übergeben wird
+            const finalEntry: MediaEntry = {
+                ...editingEntry, // Fügt existingEntry-Felder hinzu (z.B. createdAt)
+                ...entryData,
+                id: finalId,
+                // Füge createdAt nur hinzu, wenn es nicht vom existingEntry kommt (neuer Eintrag)
+                createdAt: editingEntry?.createdAt || new Date(), 
+            };
+            
+            if (isEditing) {
+                onEntryUpdated(finalEntry); 
+            } else {
+                onEntryCreated(finalEntry); 
+            }
+            
+            resetForm(); // Formular zurücksetzen
+        } else {
+            // Zeigt Fehler der Server Action an (z.B. Validierungsfehler)
+            alert(`Fehler beim Speichern: ${result.error}`);
         }
-      }
-    }
-  }, [editingEntry]);
+        
+    } catch (error) {
+      console.error("Kritischer Fehler beim Speichern:", error);
+      alert("Ein kritischer Fehler auf der Server-Seite ist aufgetreten.");
+    } finally {
+      setPending(false); // Ladezustand beenden
+    }
+  };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+// ---------------------------------------------------------------------------------
+// ENDE: ÄNDERUNG (handleSubmit)
+// ---------------------------------------------------------------------------------
 
-    if (file.size > 5 * 1024 * 1024) {
-      alert("Bild ist zu groß! Maximal 5MB erlaubt.");
-      return;
-    }
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setImage(reader.result as string);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const removeImage = () => {
-    setImage(undefined);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
-  const addCustomField = () => {
-    setCustomFields([
-      ...customFields,
-      { id: crypto.randomUUID(), name: "", value: "" },
-    ]);
-  };
-
-  const updateCustomField = (id: string, field: "name" | "value", newValue: string) => {
-    setCustomFields(
-      customFields.map((f) => (f.id === id ? { ...f, [field]: newValue } : f))
-    );
-  };
-
-  const removeCustomField = (id: string) => {
-    setCustomFields(customFields.filter((f) => f.id !== id));
-  };
-
-  const addSeason = () => {
-    setSeasons([...seasons, { seasonNumber: seasons.length + 1, episodes: 0 }]);
-  };
-
-  const updateSeasonEpisodes = (seasonNumber: number, episodes: number) => {
-    setSeasons(seasons.map(s => 
-      s.seasonNumber === seasonNumber ? { ...s, episodes } : s
-    ));
-  };
-
-  const removeSeason = (seasonNumber: number) => {
-    setSeasons(seasons.filter(s => s.seasonNumber !== seasonNumber)
-      .map((s, idx) => ({ ...s, seasonNumber: idx + 1 })));
-  };
-
-  const addReadingSession = () => {
-    setReadingSessions([
-      ...readingSessions,
-      { id: crypto.randomUUID(), pages: 0 }
-    ]);
-  };
-
-  const updateReadingSession = (id: string, field: keyof ReadingSession, value: number | undefined) => {
-    setReadingSessions(readingSessions.map(s => 
-      s.id === id ? { ...s, [field]: value } : s
-    ));
-  };
-
-  const removeReadingSession = (id: string) => {
-    setReadingSessions(readingSessions.filter(s => s.id !== id));
-  };
-
-  const addGamingSession = () => {
-    setGamingSessions([
-      ...gamingSessions,
-      { id: crypto.randomUUID(), duration: 0 }
-    ]);
-  };
-
-  const updateGamingSession = (id: string, field: keyof GamingSession, value: number | undefined) => {
-    setGamingSessions(gamingSessions.map(s => 
-      s.id === id ? { ...s, [field]: value } : s
-    ));
-  };
-
-  const removeGamingSession = (id: string) => {
-    setGamingSessions(gamingSessions.filter(s => s.id !== id));
-  };
-
-  const addMultiValue = (fieldName: string) => {
-    const current = categorySpecificFields[fieldName] as string[] || [];
-    setCategorySpecificFields({
-      ...categorySpecificFields,
-      [fieldName]: [...current, ""],
-    });
-  };
-
-  const updateMultiValue = (fieldName: string, index: number, value: string) => {
-    const current = categorySpecificFields[fieldName] as string[] || [];
-    const updated = [...current];
-    updated[index] = value;
-    setCategorySpecificFields({
-      ...categorySpecificFields,
-      [fieldName]: updated,
-    });
-  };
-
-  const removeMultiValue = (fieldName: string, index: number) => {
-    const current = categorySpecificFields[fieldName] as string[] || [];
-    setCategorySpecificFields({
-      ...categorySpecificFields,
-      [fieldName]: current.filter((_, i) => i !== index),
-    });
-  };
-
-  const getMultiValues = (fieldName: string): string[] => {
-    const value = categorySpecificFields[fieldName];
-    if (Array.isArray(value)) return value;
-    return [];
-  };
-
-  const handleNumberInput = (fieldName: string, value: string) => {
-    const sanitized = value.replace(/[^0-9]/g, '');
-    setCategorySpecificFields({
-      ...categorySpecificFields,
-      [fieldName]: sanitized,
-    });
-  };
-
-  const validateTextInput = (value: string): boolean => {
-    return /^[a-zA-ZäöüÄÖÜß0-9\s\-.,]*$/.test(value);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setPending(true);
-
-    const cleanedFields: Record<string, string | string[]> = {};
-    Object.entries(categorySpecificFields).forEach(([key, value]) => {
-      if (Array.isArray(value)) {
-        const filtered = value.filter(v => v.trim() !== "");
-        if (filtered.length > 0) {
-          cleanedFields[key] = filtered;
-        }
-      } else if (value && value.trim() !== "") {
-        cleanedFields[key] = value;
-      }
-    });
-
-    if (category === "series" && seasons.length > 0) {
-      cleanedFields["Staffeln"] = JSON.stringify(seasons);
-    }
-
-    const entryData: MediaEntry = {
-      id: isEditing ? editingEntry.id : crypto.randomUUID(),
-      category,
-      title,
-      image,
-      categorySpecificFields: cleanedFields,
-      customFields: customFields.filter(f => f.name && f.value).map(({ name, value }) => ({ name, value })),
-      readingSessions: category === "books" && readingSessions.length > 0 ? readingSessions : undefined,
-      gamingSessions: category === "videogames" && gamingSessions.length > 0 ? gamingSessions : undefined,
-      completed,
-      abandoned,
-      createdAt: isEditing ? editingEntry.createdAt : new Date(),
-    };
-
-    try {
-      if (isEditing) {
-        onEntryUpdated(entryData);
-      } else {
-        onEntryCreated(entryData);
-      }
-      
-      resetForm();
-    } catch (error) {
-      console.error("Fehler beim Speichern:", error);
-    } finally {
-      setPending(false);
-    }
-  };
-
-  const resetForm = () => {
-    setTitle("");
-    setImage(undefined);
-    setCategorySpecificFields({});
-    setCustomFields([]);
-    setSeasons([]);
-    setReadingSessions([]);
-    setGamingSessions([]);
-    setCompleted(false);
-    setAbandoned(false);
-    setIsExpanded(false);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-    if (onCancelEdit) {
-      onCancelEdit();
-    }
-  };
+  const resetForm = () => {
+    setTitle("");
+    setImage(undefined);
+    setCategorySpecificFields({});
+    setCustomFields([]);
+    setSeasons([]);
+    setReadingSessions([]);
+    setGamingSessions([]);
+    setCompleted(false);
+    setAbandoned(false);
+    setIsExpanded(false);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+    if (onCancelEdit) {
+      onCancelEdit();
+    }
+  };
 
   const handleCancel = () => {
     resetForm();
