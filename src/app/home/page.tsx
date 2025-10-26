@@ -4,6 +4,10 @@ import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { NewEntryForm, type Category, type MediaEntry } from "./_components/new-entry-form";
 import { EntryList } from "./_components/entry-list";
+import { StatisticsView } from "./_components/statistics-view";
+import { IconChartBar, IconLogout } from "@tabler/icons-react";
+import { Button } from "@/components/ui/button";
+import { signOut } from "@/lib/auth-client"; // CLIENT-SIDE Auth!
 
 const categories: { value: Category; label: string }[] = [
   { value: "books", label: "Bücher" },
@@ -17,7 +21,7 @@ const STORAGE_KEY = "media-tracker-entries";
 
 export default function HomePage() {
   const [entries, setEntries] = useState<MediaEntry[]>([]);
-  const [activeCategory, setActiveCategory] = useState<Category>("books");
+  const [activeCategory, setActiveCategory] = useState<Category | "stats">("books");
   const [isLoaded, setIsLoaded] = useState(false);
   const [editingEntry, setEditingEntry] = useState<MediaEntry | undefined>(undefined);
 
@@ -50,7 +54,6 @@ export default function HomePage() {
   }, [entries, isLoaded]);
 
   const handleEntryCreated = (entry: MediaEntry) => {
-    // Prüfe auf Duplikate
     const isDuplicate = entries.some(
       e => e.title.toLowerCase().trim() === entry.title.toLowerCase().trim() 
       && e.category === entry.category
@@ -65,7 +68,6 @@ export default function HomePage() {
   };
 
   const handleEntryUpdated = (updatedEntry: MediaEntry) => {
-    // Prüfe auf Duplikate (außer der Eintrag selbst)
     const isDuplicate = entries.some(
       e => e.id !== updatedEntry.id 
       && e.title.toLowerCase().trim() === updatedEntry.title.toLowerCase().trim() 
@@ -87,6 +89,7 @@ export default function HomePage() {
 
   const handleEdit = (entry: MediaEntry) => {
     setEditingEntry(entry);
+    setActiveCategory(entry.category);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -94,7 +97,21 @@ export default function HomePage() {
     setEditingEntry(undefined);
   };
 
-  const filteredEntries = entries.filter((e) => e.category === activeCategory);
+  const handleLogout = async () => {
+    if (confirm("Möchtest du dich wirklich ausloggen?")) {
+      await signOut({
+        fetchOptions: {
+          onSuccess: () => {
+            window.location.href = "/login";
+          },
+        },
+      });
+    }
+  };
+
+  const filteredEntries = activeCategory !== "stats" 
+    ? entries.filter((e) => e.category === activeCategory)
+    : [];
 
   if (!isLoaded) {
     return (
@@ -106,18 +123,30 @@ export default function HomePage() {
 
   return (
     <div className="container mx-auto p-6">
-      <h1 className="text-3xl font-bold mb-6">Media Tracker</h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Media Tracker</h1>
+        <Button onClick={handleLogout} variant="outline" size="sm">
+          <IconLogout className="h-4 w-4 mr-2" />
+          Logout
+        </Button>
+      </div>
 
       <Tabs value={activeCategory} onValueChange={(v) => {
-        setActiveCategory(v as Category);
-        setEditingEntry(undefined);
+        setActiveCategory(v as Category | "stats");
+        if (v !== activeCategory) {
+          setEditingEntry(undefined);
+        }
       }}>
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           {categories.map((cat) => (
             <TabsTrigger key={cat.value} value={cat.value}>
               {cat.label} ({entries.filter(e => e.category === cat.value).length})
             </TabsTrigger>
           ))}
+          <TabsTrigger value="stats">
+            <IconChartBar className="h-4 w-4 mr-2" />
+            Statistiken
+          </TabsTrigger>
         </TabsList>
 
         {categories.map((cat) => (
@@ -131,6 +160,7 @@ export default function HomePage() {
                 onCancelEdit={handleCancelEdit}
                 existingTitles={entries
                   .filter(e => e.category === cat.value)
+                  .filter(e => !editingEntry || e.id !== editingEntry.id)
                   .map(e => e.title)
                 }
               />
@@ -142,6 +172,10 @@ export default function HomePage() {
             </div>
           </TabsContent>
         ))}
+        
+        <TabsContent value="stats" className="mt-6">
+          <StatisticsView entries={entries} />
+        </TabsContent>
       </Tabs>
     </div>
   );

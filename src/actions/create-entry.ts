@@ -5,7 +5,7 @@
 // --- IMPORTS ---
 import { db } from "@/db"; // Dein konfigurierter Drizzle Client
 // Importiere deine gesamte DB-Logik-Funktion
-import { createOrUpdateDynamicEntry } from "../app/home/_components/sqlite-entries";
+import { createOrUpdateDynamicEntry } from "@/app/home/_components/sqlite-entries";
 // Importiere die benötigten Typen für die Daten
 import { EntryData } from "../lib/types"; // PASSE DIESEN PFAD AN!
 import { revalidatePath } from "next/cache"; 

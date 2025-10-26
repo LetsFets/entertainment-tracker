@@ -129,7 +129,7 @@ const titleExists = !isEditing && existingTitles.some(
   t => t.toLowerCase().trim() === title.toLowerCase().trim()
 );
 
-  useEffect(() => {
+  useEffect(() => {
     if (editingEntry) {
       setIsExpanded(true);
       setTitle(editingEntry.title);
