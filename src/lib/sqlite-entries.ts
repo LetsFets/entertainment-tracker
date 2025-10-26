@@ -29,6 +29,7 @@ const dbSchema = {
 
 type DrizzleDB = {
   run: (sql: SQL) => Promise<any>;
+  transaction: <T>(cb: (tx: DrizzleDB) => Promise<T>) => Promise<T>;
 };
 
 async function getTableColumns(db: DrizzleDB, tableName: string): Promise<Set<string>> {
@@ -45,18 +46,18 @@ async function getTableColumns(db: DrizzleDB, tableName: string): Promise<Set<st
   return new Set(columnNames);
 }
 
-async function ensureTableExists(db: DrizzleDB, table: AnySQLiteTable, tableName: string) {
+async function ensureTableExists(db: DrizzleDB, tableName: string) {
     const createTableQuery = sql`
         CREATE TABLE IF NOT EXISTS ${sql.identifier(tableName)} (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id TEXT PRIMARY KEY,
             title TEXT NOT NULL,
+            image TEXT,
             completed INTEGER NOT NULL DEFAULT 0,
-            abandoned INTEGER NOT NULL DEFAULT 0
+            abandoned INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER DEFAULT (strftime('%s', 'now'))
         );
     `;
-    console.log(`Versuche, Basistabelle '${tableName}' zu erstellen...`);
     await db.run(createTableQuery);
-    console.log(`Tabelle '${tableName}' ist jetzt vorhanden.`);
 }
 
 async function ensureColumnExists(
@@ -80,101 +81,78 @@ async function ensureColumnExists(
 }
 
 export async function createOrUpdateDynamicEntry(db: DrizzleDB, data: EntryData & { id?: string }) {
-  console.log("createOrUpdateDynamicEntry started", data);
-  const { category, title, image, categorySpecificFields, customFields, readingSessions, gamingSessions, completed, abandoned } = data;
+    const { category, id } = data;
+    const isUpdate = !!id;
 
-  const table = dbSchema[category];
-  if (!table) {
-    throw new Error(`Unbekannte Kategorie: ${category}`);
-  }
-  const tableName = table._.config.name;
-
-  try {
-    await ensureTableExists(db, table, tableName);
-    const existingColumns = await getTableColumns(db, tableName);
-    console.log(`Bestehende Spalten für ${tableName}:`, existingColumns);
-
-    const dataToInsert: Record<string, any> = {};
-
-    dataToInsert.title = title;
-    dataToInsert.completed = completed ? 1 : 0;
-    dataToInsert.abandoned = abandoned ? 1 : 0;
-    
-    const imageColName = 'image';
-    await ensureColumnExists(db, table, imageColName, existingColumns);
-    dataToInsert[imageColName] = image || null;
-    
-    if (readingSessions && readingSessions.length > 0) {
-        const sessionsColName = 'reading_sessions';
-        await ensureColumnExists(db, table, sessionsColName, existingColumns);
-        dataToInsert[sessionsColName] = JSON.stringify(readingSessions);
+    const table = dbSchema[category];
+    if (!table) {
+        throw new Error(`[translate:Unbekannte Kategorie:] ${category}`);
     }
-    
-    if (gamingSessions && gamingSessions.length > 0) {
-        const sessionsColName = 'gaming_sessions';
-        await ensureColumnExists(db, table, sessionsColName, existingColumns);
-        dataToInsert[sessionsColName] = JSON.stringify(gamingSessions);
-    }
-    
-    for (const [key, value] of Object.entries(categorySpecificFields)) {
-    const columnName = key.trim().toLowerCase();
-    if (!columnName) continue;
+    const tableName = table._.config.name;
 
-    await ensureColumnExists(db, table, columnName, existingColumns);
-    
-    if (Array.isArray(value)) {
-        dataToInsert[columnName] = JSON.stringify(value.filter(v => v.trim() !== ''));
-    } else {
-        dataToInsert[columnName] = value;
-    }
-    }
+    await db.transaction(async (tx) => {
+        await ensureTableExists(tx, tableName);
+        const existingColumns = await getTableColumns(tx, tableName);
 
-    for (const field of customFields) {
-      const columnName = field.name.trim()
-      if (!columnName) continue;
+        // 1. Alle Spalten sicherstellen, bevor Daten eingefügt werden
+        const allKeys = [
+            ...Object.keys(data.categorySpecificFields),
+            ...data.customFields.map(f => f.name),
+            'reading_sessions',
+            'gaming_sessions'
+        ];
+        for (const key of allKeys) {
+            if (key.trim()) await ensureColumnExists(tx, table, key.trim().toLowerCase(), existingColumns);
+        }
+        
+        // 2. Daten für das Einfügen/Aktualisieren vorbereiten
+        const dataToInsert: Record<string, any> = {
+            title: data.title,
+            image: data.image || null,
+            completed: data.completed ? 1 : 0,
+            abandoned: data.abandoned ? 1 : 0,
+        };
 
-      await ensureColumnExists(db, table, columnName, existingColumns);
-      dataToInsert[columnName] = field.value;
-    }
+        if (data.readingSessions?.length) {
+            dataToInsert['reading_sessions'] = JSON.stringify(data.readingSessions);
+        }
+        if (data.gamingSessions?.length) {
+            dataToInsert['gaming_sessions'] = JSON.stringify(data.gamingSessions);
+        }
 
-    // UPDATE oder INSERT
-    if (data.id) {
-      // UPDATE
-      console.log(`UPDATE: Aktualisiere Eintrag ID ${data.id}`);
-      
-      const updates = Object.entries(dataToInsert).map(([key, value]) => {
-        return sql`${sql.identifier(key)} = ${value}`;
-      });
-      
-      const updateQuery = sql`
-        UPDATE ${sql.identifier(tableName)}
-        SET ${sql.join(updates, sql`, `)}
-        WHERE id = ${parseInt(data.id)}
-      `;
-      
-      const result = await db.run(updateQuery);
-      console.log("UPDATE erfolgreich:", result);
-      
-      return { success: true, result };
-    } else {
-      // INSERT
-      console.log(`INSERT: Füge Daten in Tabelle ${tableName} ein:`, dataToInsert);
+        for (const [key, value] of Object.entries(data.categorySpecificFields)) {
+            const columnName = key.trim().toLowerCase();
+            if (!columnName) continue;
+            dataToInsert[columnName] = Array.isArray(value) ? JSON.stringify(value) : value;
+        }
 
-      const keys = Object.keys(dataToInsert);
-      const values = Object.values(dataToInsert);
-      
-      const columns = sql.join(keys.map(k => sql.identifier(k)), sql`, `);
-      const placeholders = sql.join(values.map(v => sql`${v}`), sql`, `);
+        for (const field of data.customFields) {
+            const columnName = field.name.trim().toLowerCase();
+            if (!columnName) continue;
+            dataToInsert[columnName] = field.value;
+        }
 
-      const insertQuery = sql`INSERT INTO ${sql.identifier(tableName)} (${columns}) VALUES (${placeholders})`;
-      
-      const result = await db.run(insertQuery);
-      console.log("INSERT erfolgreich:", result);
+        // 3. UPDATE oder INSERT ausführen
+        if (isUpdate) {
+            const setClauses = Object.entries(dataToInsert).map(
+                ([key, value]) => sql`${sql.identifier(key)} = ${value}`
+            );
+            await tx.run(sql`
+                UPDATE ${sql.identifier(tableName)}
+                SET ${sql.join(setClauses, sql`, `)}
+                WHERE id = ${id}
+            `);
+        } else {
+            const newId = data.id || crypto.randomUUID(); // ID hier generieren
+            dataToInsert.id = newId;
 
-      return { success: true, result };
-    }
-  } catch (error) {
-    console.error("Fehler:", error);
-    throw error;
-  }
+            const cols = Object.keys(dataToInsert).map(k => sql.identifier(k));
+            const vals = Object.values(dataToInsert);
+            
+            await tx.run(sql`
+                INSERT INTO ${sql.identifier(tableName)} (${sql.join(cols, sql`, `)})
+                VALUES (${sql.join(vals.map(v => sql`${v}`), sql`, `)})
+            `);
+        }
+    });
 }

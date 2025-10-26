@@ -34,6 +34,17 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
     );
   }
 
+  // --- START: NEUE HELFERFUNKTION ---
+  // Formatiert einen DB-Schlüssel (z.B. "aktuelle_folge") in einen Anzeigenamen (z.B. "Aktuelle Folge")
+  const formatFieldName = (key: string): string => {
+    return key
+      .replace(/_/g, ' ')
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  };
+  // --- ENDE: NEUE HELFERFUNKTION ---
+
   const calculateSeriesProgress = (entry: MediaEntry): { text: string; percentage: number; seasonsInfo: string } | null => {
     const seasonsData = getField(entry, "Staffeln");
     const currentSeason = getField(entry, "Aktuelle Staffel");
@@ -114,16 +125,8 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
     if (total <= 0) return null;
     
     const colors = [
-      "bg-blue-400",
-      "bg-purple-400",
-      "bg-teal-400",
-      "bg-amber-400",
-      "bg-rose-400",
-      "bg-emerald-400",
-      "bg-indigo-400",
-      "bg-cyan-400",
-      "bg-orange-400",
-      "bg-fuchsia-400",
+      "bg-blue-400", "bg-purple-400", "bg-teal-400", "bg-amber-400", "bg-rose-400",
+      "bg-emerald-400", "bg-indigo-400", "bg-cyan-400", "bg-orange-400", "bg-fuchsia-400",
     ];
     
     const readPages = sessions.reduce((sum, s) => sum + s.pages, 0);
@@ -295,18 +298,43 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
                     </div>
                   )}
                   
+                  {/* --- START: KORRIGIERTER ANZEIGEBLOCK --- */}
                   <div className="space-y-2 text-sm">
                     {Object.entries(entry.categorySpecificFields).map(([key, value]) => {
-                      if (!value) return null;
-                      
-                      if (["Staffeln", "staffeln", "Aktuelle Staffel", "aktuelle staffel", "Aktuelle Folge", "aktuelle folge", "Folgen gesamt", "folgen gesamt", "Seitenanzahl", "seitenanzahl", "Spielzeit", "spielzeit"].includes(key.toLowerCase())) {
-                        return null;
+                      if (!value || (Array.isArray(value) && value.length === 0)) return null;
+
+                      const displayName = formatFieldName(key);
+                      const purelyProgressFields = ["Folgen gesamt", "Spielzeit"];
+                      if (purelyProgressFields.includes(displayName)) {
+                          return null;
+                      }
+
+                      if (displayName === 'Staffeln') {
+                          try {
+                              const seasonsData = JSON.parse(value as string);
+                              if (Array.isArray(seasonsData) && seasonsData.length > 0) {
+                                  return (
+                                      <p key={key} className="text-muted-foreground">
+                                          Anzahl Staffeln: {seasonsData.length}
+                                      </p>
+                                  );
+                              }
+                          } catch { /* Fail silently */ }
+                          return null;
+                      }
+
+                      if (displayName === 'Seitenanzahl') {
+                          return (
+                              <p key={key} className="text-muted-foreground">
+                                  {displayName}: {value} Seiten
+                              </p>
+                          );
                       }
                       
                       if (Array.isArray(value)) {
                         return (
                           <div key={key} className="flex flex-wrap gap-1 items-center">
-                            <span className="text-muted-foreground mr-2">{key}:</span>
+                            <span className="text-muted-foreground mr-2">{displayName}:</span>
                             {value.map((item, idx) => (
                               <Badge key={idx} variant="secondary">
                                 {item}
@@ -318,14 +346,14 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
                       
                       return (
                         <p key={key} className="text-muted-foreground">
-                          {key}: {value}
+                          {displayName}: {value}
                         </p>
                       );
                     })}
                     
                     {entry.customFields.map((field, idx) => (
                       <p key={idx} className="text-muted-foreground">
-                        {field.name}: {field.value}
+                        {formatFieldName(field.name)}: {field.value}
                       </p>
                     ))}
                     
@@ -335,12 +363,13 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
                         entry.abandoned ? "text-red-600" :
                         "text-blue-600"
                       }>
-                        {entry.completed ? "Abgeschlossen" :
-                         entry.abandoned ? "Abgebrochen" :
-                         "In Bearbeitung"}
+                        {entry.completed ? "[translate:Abgeschlossen]" :
+                         entry.abandoned ? "[translate:Abgebrochen]" :
+                         "[translate:In Bearbeitung]"}
                       </span>
                     </p>
                   </div>
+                  {/* --- ENDE: KORRIGIERTER ANZEIGEBLOCK --- */}
                 </div>
                 
                 {entry.image && (
