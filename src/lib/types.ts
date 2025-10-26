@@ -1,7 +1,6 @@
 export type Category = "books" | "series" | "movies" | "videogames" | "podcasts";
 
 export interface ReadingSession {
-  id: string;
   pages: number;
   year?: number;
   month?: number;
@@ -9,7 +8,6 @@ export interface ReadingSession {
 }
 
 export interface GamingSession {
-  id: string;
   duration: number;
   year?: number;
   month?: number;

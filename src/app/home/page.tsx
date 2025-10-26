@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { NewEntryForm, type Category, type MediaEntry } from "./_components/new-entry-form";
+import { NewEntryForm } from "./_components/new-entry-form";
 import { EntryList } from "./_components/entry-list";
 import { StatisticsView } from "./_components/statistics-view";
 import { IconChartBar, IconLogout } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
-import { signOut } from "@/lib/auth-client"; // CLIENT-SIDE Auth!
+import { signOut } from "@/lib/auth-client";
+import { getAllEntries, deleteEntry } from "@/actions/create-entry";
+import type { Category, MediaEntry } from "@/lib/types";
 
 const categories: { value: Category; label: string }[] = [
   { value: "books", label: "Bücher" },
@@ -17,8 +19,6 @@ const categories: { value: Category; label: string }[] = [
   { value: "podcasts", label: "Podcasts" },
 ];
 
-const STORAGE_KEY = "media-tracker-entries";
-
 export default function HomePage() {
   const [entries, setEntries] = useState<MediaEntry[]>([]);
   const [activeCategory, setActiveCategory] = useState<Category | "stats">("books");
@@ -26,65 +26,39 @@ export default function HomePage() {
   const [editingEntry, setEditingEntry] = useState<MediaEntry | undefined>(undefined);
 
   useEffect(() => {
-    try {
-      const stored = sessionStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        const entriesWithDates = parsed.map((entry: any) => ({
-          ...entry,
-          createdAt: new Date(entry.createdAt),
-        }));
-        setEntries(entriesWithDates);
+    async function loadEntries() {
+      try {
+        const result = await getAllEntries();
+        if (result.success) {
+          setEntries(result.entries);
+        }
+      } catch (error) {
+        console.error("Fehler beim Laden:", error);
+      } finally {
+        setIsLoaded(true);
       }
-    } catch (error) {
-      console.error("Fehler beim Laden der Daten:", error);
-    } finally {
-      setIsLoaded(true);
     }
+    
+    loadEntries();
   }, []);
 
-  useEffect(() => {
-    if (isLoaded) {
-      try {
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
-      } catch (error) {
-        console.error("Fehler beim Speichern der Daten:", error);
-      }
-    }
-  }, [entries, isLoaded]);
-
   const handleEntryCreated = (entry: MediaEntry) => {
-    const isDuplicate = entries.some(
-      e => e.title.toLowerCase().trim() === entry.title.toLowerCase().trim() 
-      && e.category === entry.category
-    );
-    
-    if (isDuplicate) {
-      alert(`Ein Eintrag mit dem Titel "${entry.title}" existiert bereits in dieser Kategorie!`);
-      return;
-    }
-    
     setEntries([entry, ...entries]);
   };
 
   const handleEntryUpdated = (updatedEntry: MediaEntry) => {
-    const isDuplicate = entries.some(
-      e => e.id !== updatedEntry.id 
-      && e.title.toLowerCase().trim() === updatedEntry.title.toLowerCase().trim() 
-      && e.category === updatedEntry.category
-    );
-    
-    if (isDuplicate) {
-      alert(`Ein anderer Eintrag mit dem Titel "${updatedEntry.title}" existiert bereits in dieser Kategorie!`);
-      return;
-    }
-    
     setEntries(entries.map(e => e.id === updatedEntry.id ? updatedEntry : e));
     setEditingEntry(undefined);
   };
 
-  const handleDelete = (id: string) => {
-    setEntries(entries.filter((e) => e.id !== id));
+  const handleDelete = async (id: string) => {
+    const entry = entries.find(e => e.id === id);
+    if (!entry) return;
+    
+    const result = await deleteEntry(entry.category, id);
+    if (result.success) {
+      setEntries(entries.filter((e) => e.id !== id));
+    }
   };
 
   const handleEdit = (entry: MediaEntry) => {
@@ -159,8 +133,7 @@ export default function HomePage() {
                 editingEntry={activeCategory === cat.value ? editingEntry : undefined}
                 onCancelEdit={handleCancelEdit}
                 existingTitles={entries
-                  .filter(e => e.category === cat.value)
-                  .filter(e => !editingEntry || e.id !== editingEntry.id)
+                  .filter(e => e.category === cat.value && (!editingEntry || e.id !== editingEntry.id))
                   .map(e => e.title)
                 }
               />

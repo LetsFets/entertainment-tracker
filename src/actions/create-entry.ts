@@ -1,51 +1,137 @@
-// Datei: actions/create-entry.ts
-
 "use server";
 
-// --- IMPORTS ---
-import { db } from "@/db"; // Dein konfigurierter Drizzle Client
-// Importiere deine gesamte DB-Logik-Funktion
-import { createOrUpdateDynamicEntry } from "@/app/home/_components/sqlite-entries";
-// Importiere die benötigten Typen für die Daten
-import { EntryData } from "../lib/types"; // PASSE DIESEN PFAD AN!
-import { revalidatePath } from "next/cache"; 
+import { db } from "@/db";
+import { createOrUpdateDynamicEntry } from "@/lib/sqlite-entries";
+import { sql } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
+import type { EntryData, MediaEntry, Category } from "@/lib/types";
 
-// --- SERVER ACTION ---
+const dbSchema = {
+  books: "books",
+  series: "series",
+  movies: "movies",
+  videogames: "videogames",
+  podcasts: "podcasts",
+} as const;
 
-/**
- * Verarbeitet die kompletten Formulardaten vom Frontend und ruft die DB-Logik auf.
- * Diese Funktion dient als Server Action und verarbeitet sowohl CREATE als auch UPDATE.
- * * @param data Die übermittelten Formulardaten (Typ EntryData).
- * @returns Ein Ergebnisobjekt mit Erfolg, Fehlermeldung und der ID (für Updates/Frontend-Sync).
- */
-export async function createEntry(data: EntryData & { id?: string }): Promise<{ success: boolean; error?: string; id?: string }> {
+export async function createEntry(data: EntryData) {
+  try {
+    console.log("Server Action: Speichervorgang gestartet");
     
-    console.log("Server Action: Speichervorgang gestartet.");
-    
-    // 1. Beispiel-Validierung
     if (!data.title || data.title.trim().length === 0) {
-        return { success: false, error: "Titel ist erforderlich" };
+      return { success: false, error: "Titel ist erforderlich" };
+    }
+
+    const result = await createOrUpdateDynamicEntry(db as any, data);
+    
+    // Die ID kommt von AUTOINCREMENT
+    const insertedId = result.result?.lastInsertRowid 
+      ? String(result.result.lastInsertRowid) 
+      : String(Date.now()); // Fallback
+    
+    revalidatePath('/home');
+
+    return { 
+      success: true, 
+      id: insertedId 
+    };
+
+  } catch (error) {
+    console.error("Fehler in Server Action:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unbekannter Fehler";
+    return { success: false, error: errorMessage };
+  }
+}
+
+export async function deleteEntry(category: string, id: string) {
+  try {
+    const tableName = dbSchema[category as keyof typeof dbSchema];
+    if (!tableName) {
+      return { success: false, error: "Ungültige Kategorie" };
+    }
+
+    console.log(`Lösche Eintrag ID ${id} aus Tabelle ${tableName}`);
+    
+    // ID als INTEGER behandeln
+    const numericId = parseInt(id);
+    if (isNaN(numericId)) {
+      console.error(`Ungültige ID: ${id}`);
+      return { success: false, error: "Ungültige ID" };
     }
     
-    try {
-        // 2. Datenbank-Interaktion: Ruft deine dynamische Drizzle-Logik auf
-        const result = await createOrUpdateDynamicEntry(db as any, data);
+    const deleteQuery = sql`DELETE FROM ${sql.identifier(tableName)} WHERE id = ${numericId}`;
+    const result = await db.run(deleteQuery);
+    
+    console.log("Delete erfolgreich:", result);
+    
+    revalidatePath('/home');
+    return { success: true };
+  } catch (error) {
+    console.error("Delete error:", error);
+    return { success: false, error: "Fehler beim Löschen" };
+  }
+}
 
-        // 3. Ergebnis-Handling
-        // SQLite gibt lastInsertRowid zurück, nutze das für die ID, falls es ein neuer Eintrag ist.
-        const insertedId = data.id || result.result?.lastInsertRowid ? String(result.result.lastInsertRowid) : undefined;
+export async function getAllEntries(): Promise<{ success: boolean; entries: MediaEntry[]; error?: string }> {
+  try {
+    const allEntries: MediaEntry[] = [];
+    
+    for (const [category, tableName] of Object.entries(dbSchema)) {
+      try {
+        const result = await db.run(sql`SELECT * FROM ${sql.identifier(tableName)}`);
+        const rows = Array.isArray(result) ? result : (result as any)?.rows || [];
         
-        // Caching: Revalidiert die Hauptseite, damit die neuen Daten sofort angezeigt werden.
-        revalidatePath('/'); 
-
-        return { 
-            success: true, 
-            id: insertedId // Gibt die (neue oder bestehende) ID an das Frontend zurück
-        };
-
-    } catch (error) {
-        console.error("Fehler in Server Action (DB-Speicherung):", error);
-        const errorMessage = error instanceof Error ? error.message : "Unbekannter Fehler beim Speichern des Eintrags.";
-        return { success: false, error: errorMessage };
+        const entries = rows.map((row: any) => ({
+          id: String(row.id),
+          category: category as Category,
+          title: row.title,
+          image: row.image || undefined,
+          categorySpecificFields: parseFields(row),
+          customFields: [],
+          readingSessions: row.reading_sessions ? JSON.parse(row.reading_sessions) : undefined,
+          gamingSessions: row.gaming_sessions ? JSON.parse(row.gaming_sessions) : undefined,
+          completed: row.completed === 1,
+          abandoned: row.abandoned === 1,
+          createdAt: new Date(row.created_at || Date.now()),
+        }));
+        
+        allEntries.push(...entries);
+      } catch (err) {
+        console.log(`Tabelle ${tableName} existiert noch nicht oder ist leer`);
+      }
     }
+    
+    return { success: true, entries: allEntries };
+  } catch (error) {
+    console.error("Fehler beim Laden:", error);
+    return { success: false, entries: [], error: "Fehler beim Laden" };
+  }
+}
+
+function parseFields(row: any): Record<string, string | string[]> {
+  const fields: Record<string, string | string[]> = {};
+  const systemFields = ['id', 'title', 'image', 'completed', 'abandoned', 'reading_sessions', 'gaming_sessions', 'created_at'];
+  
+  const fieldNameMapping: Record<string, string> = {
+    'autor': 'Autor',
+    'seitenanzahl': 'Seitenanzahl',
+    'genre': 'Genre',
+    'reihe': 'Reihe',
+  };
+  
+  for (const [key, value] of Object.entries(row)) {
+    const lowerKey = key.toLowerCase();
+    if (!systemFields.includes(lowerKey) && value !== null && value !== undefined) {
+      const displayName = fieldNameMapping[lowerKey] || key;
+      
+      try {
+        const parsed = JSON.parse(value as string);
+        fields[displayName] = Array.isArray(parsed) ? parsed : (value as string);
+      } catch {
+        fields[displayName] = value as string;
+      }
+    }
+  }
+  
+  return fields;
 }

@@ -7,42 +7,19 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { IconPlus, IconX, IconPhoto, IconDeviceFloppy } from "@tabler/icons-react";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Loader2Icon } from "lucide-react";
 import Image from "next/image";
-import {EntryData} from "../../../lib/types";
-import { createEntry } from "../../../actions/create-entry";
+import { createEntry } from "@/actions/create-entry";
+import type { Category, MediaEntry, ReadingSession, GamingSession } from "@/lib/types";
 
-export type Category = "books" | "series" | "movies" | "videogames" | "podcasts";
-
-export interface ReadingSession {
+// Lokale Interfaces NUR für React State (MIT id für Rendering)
+interface ReadingSessionWithId extends ReadingSession {
   id: string;
-  pages: number;
-  year?: number;
-  month?: number;
-  day?: number;
 }
 
-export interface GamingSession {
+interface GamingSessionWithId extends GamingSession {
   id: string;
-  duration: number; // in Stunden
-  year?: number;
-  month?: number;
-  day?: number;
-}
-
-export interface MediaEntry {
-  id: string;
-  category: Category;
-  title: string;
-  image?: string;
-  categorySpecificFields: Record<string, string | string[]>;
-  customFields: { name: string; value: string }[];
-  readingSessions?: ReadingSession[];
-  gamingSessions?: GamingSession[];
-  completed: boolean;
-  abandoned: boolean;
-  createdAt: Date;
 }
 
 interface CustomField {
@@ -100,68 +77,74 @@ interface NewEntryFormProps {
   existingTitles?: string[];
 }
 
-export function NewEntryForm({ 
-  category, 
-  onEntryCreated, 
+export function NewEntryForm({
+  category,
+  onEntryCreated,
   onEntryUpdated,
   editingEntry,
   onCancelEdit,
-  existingTitles = [] 
+  existingTitles = []
 }: NewEntryFormProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [title, setTitle] = useState("");
-  const [image, setImage] = useState<string | undefined>(undefined);
-  const [categorySpecificFields, setCategorySpecificFields] = useState<Record<string, string | string[]>>({});
-  const [customFields, setCustomFields] = useState<CustomField[]>([]);
-  const [completed, setCompleted] = useState(false);
-  const [abandoned, setAbandoned] = useState(false);
-  const [pending, setPending] = useState(false); // Wird für den Ladezustand verwendet
-  const [seasons, setSeasons] = useState<{ seasonNumber: number; episodes: number }[]>([]);
-  const [readingSessions, setReadingSessions] = useState<ReadingSession[]>([]);
-  const [gamingSessions, setGamingSessions] = useState<GamingSession[]>([]);
-  
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [title, setTitle] = useState("");
+  const [image, setImage] = useState<string | undefined>(undefined);
+  const [categorySpecificFields, setCategorySpecificFields] = useState<Record<string, string | string[]>>({});
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const [completed, setCompleted] = useState(false);
+  const [abandoned, setAbandoned] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [seasons, setSeasons] = useState<{ seasonNumber: number; episodes: number }[]>([]);
+  const [readingSessions, setReadingSessions] = useState<ReadingSessionWithId[]>([]);
+  const [gamingSessions, setGamingSessions] = useState<GamingSessionWithId[]>([]);
 
-const availableFields = categoryFields[category];
-const isEditing = !!editingEntry;
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-const titleExists = !isEditing && existingTitles.some(
-  t => t.toLowerCase().trim() === title.toLowerCase().trim()
-);
+  const availableFields = categoryFields[category];
+  const isEditing = !!editingEntry;
+
+  const titleExists = existingTitles.some(
+    t => t.toLowerCase().trim() === title.toLowerCase().trim()
+  );
 
   useEffect(() => {
-    if (editingEntry) {
-      setIsExpanded(true);
-      setTitle(editingEntry.title);
-      setImage(editingEntry.image);
-      setCategorySpecificFields(editingEntry.categorySpecificFields);
-      setCustomFields(
-        editingEntry.customFields.map(f => ({ ...f, id: crypto.randomUUID() }))
-      );
-      setCompleted(editingEntry.completed);
-      setAbandoned(editingEntry.abandoned);
-      
-      if (editingEntry.readingSessions) {
-        setReadingSessions(editingEntry.readingSessions);
-      }
-      
-      if (editingEntry.gamingSessions) {
-        setGamingSessions(editingEntry.gamingSessions);
-      }
-      
-      const staffelnData = editingEntry.categorySpecificFields["Staffeln"];
-      if (typeof staffelnData === "string") {
-        try {
-          const parsed = JSON.parse(staffelnData);
-          if (Array.isArray(parsed)) {
-            setSeasons(parsed);
-          }
-        } catch (e) {
-          console.error("Fehler beim Parsen der Staffel-Daten", e);
-        }
-      }
-    }
-  }, [editingEntry]);
+    if (editingEntry) {
+      setIsExpanded(true);
+      setTitle(editingEntry.title);
+      setImage(editingEntry.image);
+      setCategorySpecificFields(editingEntry.categorySpecificFields);
+      setCustomFields(
+        editingEntry.customFields.map(f => ({ ...f, id: crypto.randomUUID() }))
+      );
+      setCompleted(editingEntry.completed);
+      setAbandoned(editingEntry.abandoned);
+
+      if (editingEntry.readingSessions) {
+        setReadingSessions(editingEntry.readingSessions.map(s => ({
+          ...s,
+          id: crypto.randomUUID()
+        })));
+      }
+
+      if (editingEntry.gamingSessions) {
+        setGamingSessions(editingEntry.gamingSessions.map(s => ({
+          ...s,
+          id: crypto.randomUUID()
+        })));
+      }
+
+      const staffelnData = editingEntry.categorySpecificFields["Staffeln"];
+      if (typeof staffelnData === "string") {
+        try {
+          const parsed = JSON.parse(staffelnData);
+          if (Array.isArray(parsed)) {
+            setSeasons(parsed);
+          }
+        } catch (e) {
+          console.error("Fehler beim Parsen der Staffel-Daten", e);
+        }
+      }
+    }
+  }, [editingEntry]);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -218,22 +201,55 @@ const titleExists = !isEditing && existingTitles.some(
       .map((s, idx) => ({ ...s, seasonNumber: idx + 1 })));
   };
 
-  const addReadingSession = () => {
-    setReadingSessions([
-      ...readingSessions,
-      { id: crypto.randomUUID(), pages: 0 }
-    ]);
-  };
+  const addReadingSession = () => {
+    // Validierung: Prüfe ob Seitenanzahl existiert
+    const totalPages = parseInt(categorySpecificFields["Seitenanzahl"] as string || "0");
+    
+    if (!totalPages || totalPages <= 0) {
+      alert("Bitte zuerst die Seitenanzahl des Buches eingeben!");
+      return;
+    }
+    
+    // Berechne bereits gelesene Seiten
+    const currentPagesRead = readingSessions.reduce((sum, s) => sum + s.pages, 0);
+    const remainingPages = totalPages - currentPagesRead;
+    
+    if (remainingPages <= 0) {
+      alert(`Du hast bereits alle ${totalPages} Seiten gelesen!`);
+      return;
+    }
+    
+    setReadingSessions([
+      ...readingSessions,
+      { id: crypto.randomUUID(), pages: 0 }
+    ]);
+  };
 
-  const updateReadingSession = (id: string, field: keyof ReadingSession, value: number | undefined) => {
-    setReadingSessions(readingSessions.map(s => 
-      s.id === id ? { ...s, [field]: value } : s
-    ));
-  };
+  const updateReadingSession = (id: string, field: keyof ReadingSession, value: number | undefined) => {
+    if (field === "pages" && value !== undefined) {
+      const totalPages = parseInt(categorySpecificFields["Seitenanzahl"] as string || "0");
+      
+      // Berechne Seiten der anderen Sessions
+      const otherSessionsPages = readingSessions
+        .filter(s => s.id !== id)
+        .reduce((sum, s) => sum + s.pages, 0);
+      
+      const maxAllowedPages = totalPages - otherSessionsPages;
+      
+      if (value > maxAllowedPages) {
+        alert(`Maximal ${maxAllowedPages} Seiten möglich!\n(Gesamt: ${totalPages}, bereits in anderen Sessions: ${otherSessionsPages})`);
+        return; // Verhindere die Änderung
+      }
+    }
+    
+    setReadingSessions(readingSessions.map(s => 
+      s.id === id ? { ...s, [field]: value } : s
+    ));
+  };
 
-  const removeReadingSession = (id: string) => {
-    setReadingSessions(readingSessions.filter(s => s.id !== id));
-  };
+  const removeReadingSession = useCallback((id: string) => {
+    setReadingSessions(prev => prev.filter(s => s.id !== id));
+  }, []);
 
   const addGamingSession = () => {
     setGamingSessions([
@@ -248,9 +264,9 @@ const titleExists = !isEditing && existingTitles.some(
     ));
   };
 
-  const removeGamingSession = (id: string) => {
-    setGamingSessions(gamingSessions.filter(s => s.id !== id));
-  };
+  const removeGamingSession = useCallback((id: string) => {
+    setGamingSessions(prev => prev.filter(s => s.id !== id));
+  }, []);
 
   const addMultiValue = (fieldName: string) => {
     const current = categorySpecificFields[fieldName] as string[] || [];
@@ -296,88 +312,82 @@ const titleExists = !isEditing && existingTitles.some(
     return /^[a-zA-ZäöüÄÖÜß0-9\s\-.,]*$/.test(value);
   };
 
-// ---------------------------------------------------------------------------------
-// START: HIER IST DIE WESENTLICHE ÄNDERUNG (handleSubmit)
-// ---------------------------------------------------------------------------------
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPending(true);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setPending(true); // Startet den Ladezustand
+    // VALIDIERUNG: Prüfe ob mehr Seiten gelesen als vorhanden
+    if (category === "books" && readingSessions.length > 0) {
+      const totalPages = parseInt(categorySpecificFields["Seitenanzahl"] as string || "0");
+      const pagesRead = readingSessions.reduce((sum, s) => sum + s.pages, 0);
+      
+      if (pagesRead > totalPages) {
+        alert(`Fehler: Du hast ${pagesRead} Seiten eingetragen, aber das Buch hat nur ${totalPages} Seiten!`);
+        setPending(false);
+        return;
+      }
+    }
 
-    // 1. Datenbereinigung und Vorbereitung
-    const cleanedFields: Record<string, string | string[]> = {};
-    Object.entries(categorySpecificFields).forEach(([key, value]) => {
-      if (Array.isArray(value)) {
-        const filtered = value.filter(v => v.trim() !== "");
-        if (filtered.length > 0) {
-          cleanedFields[key] = filtered;
-        }
-      } else if (value && value.trim() !== "") {
-        cleanedFields[key] = value;
-      }
-    });
+    const cleanedFields: Record<string, string | string[]> = {};
+    Object.entries(categorySpecificFields).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        const filtered = value.filter(v => v.trim() !== "");
+        if (filtered.length > 0) {
+          cleanedFields[key] = filtered;
+        }
+      } else if (value && value.trim() !== "") {
+        cleanedFields[key] = value;
+      }
+    });
 
-    // Staffel-Daten serialisieren
-    if (category === "series" && seasons.length > 0) {
-      cleanedFields["Staffeln"] = JSON.stringify(seasons);
-    }
+    if (category === "series" && seasons.length > 0) {
+      cleanedFields["Staffeln"] = JSON.stringify(seasons);
+    }
 
-    // Erstellung des EntryData-Objekts für die Server Action
-    const entryData: EntryData & { id?: string } = {
-      category,
-      title,
-      image,
-      categorySpecificFields: cleanedFields,
-      customFields: customFields.filter(f => f.name && f.value).map(({ id, name, value }) => ({ id, name, value })),
-      readingSessions: category === "books" && readingSessions.length > 0 ? readingSessions : undefined,
-      gamingSessions: category === "videogames" && gamingSessions.length > 0 ? gamingSessions : undefined,
-      completed,
-      abandoned,
-      // Füge die ID nur hinzu, wenn es sich um ein Update handelt
+    const entryData = {
       id: isEditing ? editingEntry!.id : undefined,
-    };
+      category,
+      title,
+      image,
+      categorySpecificFields: cleanedFields,
+      customFields: customFields.filter(f => f.name && f.value).map(({ name, value }) => ({ name, value })),
+      readingSessions: category === "books" && readingSessions.length > 0 
+        ? readingSessions.map(({ id, ...rest }) => rest) 
+        : undefined,
+      gamingSessions: category === "videogames" && gamingSessions.length > 0 
+        ? gamingSessions.map(({ id, ...rest }) => rest)
+        : undefined,
+      completed,
+      abandoned,
+    };
 
-    try {
-        // 2. DATENBANK-AKTION: Aufruf der Server Action
-        const result = await createEntry(entryData);
+    try {
+      const result = await createEntry(entryData);
 
-        if (result.success) {
-            // Die endgültige ID (bestehend oder neu vom Server)
-            const finalId = result.id || entryData.id!;
-            
-            // Erstelle das vollständige Objekt, das an die Callback-Props übergeben wird
-            const finalEntry: MediaEntry = {
-                ...editingEntry, // Fügt existingEntry-Felder hinzu (z.B. createdAt)
-                ...entryData,
-                id: finalId,
-                // Füge createdAt nur hinzu, wenn es nicht vom existingEntry kommt (neuer Eintrag)
-                createdAt: editingEntry?.createdAt || new Date(), 
-            };
-            
-            if (isEditing) {
-                onEntryUpdated(finalEntry); 
-            } else {
-                onEntryCreated(finalEntry); 
-            }
-            
-            resetForm(); // Formular zurücksetzen
+      if (result.success) {
+        const finalEntry: MediaEntry = {
+          ...entryData,
+          id: result.id!,
+          createdAt: isEditing ? editingEntry!.createdAt : new Date(),
+        };
+        
+        if (isEditing) {
+          onEntryUpdated(finalEntry);
         } else {
-            // Zeigt Fehler der Server Action an (z.B. Validierungsfehler)
-            alert(`Fehler beim Speichern: ${result.error}`);
+          onEntryCreated(finalEntry);
         }
         
-    } catch (error) {
-      console.error("Kritischer Fehler beim Speichern:", error);
-      alert("Ein kritischer Fehler auf der Server-Seite ist aufgetreten.");
-    } finally {
-      setPending(false); // Ladezustand beenden
-    }
-  };
-
-// ---------------------------------------------------------------------------------
-// ENDE: ÄNDERUNG (handleSubmit)
-// ---------------------------------------------------------------------------------
-
+        resetForm();
+      } else {
+        alert(`Fehler: ${result.error}`);
+      }
+    } catch (error) {
+      console.error("Fehler:", error);
+      alert("Ein Fehler ist aufgetreten.");
+    } finally {
+      setPending(false);
+    }
+  };
 
   const resetForm = () => {
     setTitle("");
