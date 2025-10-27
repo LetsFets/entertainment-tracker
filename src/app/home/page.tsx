@@ -59,14 +59,18 @@ export default function HomePage() {
       const result = await deleteEntry(category, id);
       
       if (result.success) {
-        console.log(`Server-Delete erfolgreich für ID=${id}`);
+        console.log(`Server-Delete erfolgreich für ID=${id}, Kategorie=${category}`);
         
         setEntries(prevEntries => {
-          // WICHTIG: Konvertiere beide IDs zu Strings für sicheren Vergleich!
+          // WICHTIG: Filtere nach ID UND Category!
           const filtered = prevEntries.filter(entry => {
-            const match = String(entry.id) !== String(id);
-            console.log(`Filter: entry.id=${entry.id} (${typeof entry.id}), id=${id} (${typeof id}), keep=${match}`);
-            return match;
+            const idMatch = String(entry.id) === String(id);
+            const categoryMatch = entry.category === category;
+            const shouldDelete = idMatch && categoryMatch;
+            
+            console.log(`Filter: entry.id=${entry.id}, entry.category=${entry.category}, target.id=${id}, target.category=${category}, delete=${shouldDelete}`);
+            
+            return !shouldDelete; // Behalte alle AUSSER die mit passender ID UND Category
           });
           
           console.log(`Entries vorher: ${prevEntries.length}, nachher: ${filtered.length}`);

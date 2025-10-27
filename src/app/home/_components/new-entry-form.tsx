@@ -198,7 +198,7 @@ export function NewEntryForm({
     if (!file) return;
 
     if (file.size > 5 * 1024 * 1024) {
-      alert("Bild ist zu groß! Maximal 5MB erlaubt.");
+      alert("Bild ist zu groß! Maximal 1MB erlaubt.");
       return;
     }
 
@@ -554,7 +554,7 @@ const resetForm = () => {
                   <IconPhoto className="mr-2 h-4 w-4" />
                   Bild hochladen
                 </Button>
-                <span className="text-xs text-muted-foreground">Max. 5MB</span>
+                <span className="text-xs text-muted-foreground">Max. 1MB</span>
               </div>
             )}
           </div>

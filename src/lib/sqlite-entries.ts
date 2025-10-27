@@ -63,7 +63,7 @@ async function getTableColumns(db: DrizzleDB, tableName: string): Promise<Set<st
 async function ensureTableExists(db: DrizzleDB, tableName: string) {
     const createTableQuery = sql`
         CREATE TABLE IF NOT EXISTS ${sql.identifier(tableName)} (
-            id TEXT PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
             completed INTEGER NOT NULL DEFAULT 0,
             abandoned INTEGER NOT NULL DEFAULT 0,

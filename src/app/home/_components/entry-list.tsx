@@ -193,40 +193,62 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
 
   const calculateTimeBar = (entry: MediaEntry): { 
     totalTime: number;
+    basePlaytime: number;
     segments: { duration: number; color: string; info: string }[];
     sessionsInfo: string;
   } | null => {
+    const basePlaytime = getField(entry, "Spielzeit");
     const sessions = entry.gamingSessions;
-    if (!sessions || sessions.length === 0) return null;
+    
+    // Falls weder Spielzeit noch Sessions vorhanden sind, null zurückgeben
+    if (!basePlaytime && (!sessions || sessions.length === 0)) {
+      return null;
+    }
     
     const colors = [
       "bg-blue-400","bg-purple-400","bg-teal-400","bg-amber-400","bg-rose-400",
       "bg-emerald-400","bg-indigo-400","bg-cyan-400","bg-orange-400","bg-fuchsia-400"
     ];
     
-    const totalTime = sessions.reduce((sum, s) => sum + Number(s.duration), 0);
+    const base = basePlaytime && !Array.isArray(basePlaytime) ? Number(basePlaytime) : 0;
+    const sessionTime = sessions ? sessions.reduce((sum, s) => sum + Number(s.duration), 0) : 0;
+    const totalTime = base + sessionTime;
     
-    const segments = sessions.map((s, idx) => {
-      let dateStr = "";
-      if (s.year) {
-        dateStr = ` (${s.year}`;
-        if (s.month) {
-          dateStr += `-${String(s.month).padStart(2, '0')}`;
-          if (s.day) {
-            dateStr += `-${String(s.day).padStart(2, '0')}`;
+    const segments: { duration: number; color: string; info: string }[] = [];
+    
+    // Basis-Spielzeit als erstes Segment (grau)
+    if (base > 0) {
+      segments.push({
+        duration: base,
+        color: "bg-gray-400",
+        info: `${base} h (Basis-Spielzeit)`
+      });
+    }
+    
+    // Sessions als weitere Segmente
+    if (sessions && sessions.length > 0) {
+      sessions.forEach((s, idx) => {
+        let dateStr = "";
+        if (s.year) {
+          dateStr = ` (${s.year}`;
+          if (s.month) {
+            dateStr += `-${String(s.month).padStart(2, '0')}`;
+            if (s.day) {
+              dateStr += `-${String(s.day).padStart(2, '0')}`;
+            }
           }
+          dateStr += ")";
         }
-        dateStr += ")";
-      }
-      return {
-        duration: s.duration,
-        color: colors[idx % colors.length],
-        info: `${s.duration} h${dateStr}`
-      };
-    });
+        segments.push({
+          duration: s.duration,
+          color: colors[idx % colors.length],
+          info: `${s.duration} h${dateStr}`
+        });
+      });
+    }
     
     const sessionsInfo = segments.map(s => s.info).join(" • ");
-    return { totalTime, segments, sessionsInfo };
+    return { totalTime, basePlaytime: base, segments, sessionsInfo };
   };
 
   return (
@@ -296,7 +318,7 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
                     <div className="mb-4 space-y-2">
                       <div className="flex justify-between text-sm text-muted-foreground">
                         <span>Spielzeit</span>
-                        <span>{timeBar.totalTime} Stunden</span>
+                        <span>{timeBar.totalTime} Stunden{timeBar.basePlaytime > 0 && timeBar.segments.length > 1 ? ` (${timeBar.basePlaytime} h Basis + ${timeBar.totalTime - timeBar.basePlaytime} h gespielt)` : ''}</span>
                       </div>
                       <div className="w-full h-2 bg-secondary rounded-full overflow-hidden flex">
                         {timeBar.segments.map((segment, idx) => (
@@ -322,6 +344,7 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
                       </div>
                     </div>
                   )}
+
                   
                   <div className="space-y-2 text-sm">
                   {Object.entries(entry.categorySpecificFields)
@@ -356,6 +379,14 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
                         return (
                           <p key={key} className="text-muted-foreground">
                             {displayName}: {value} Seiten
+                          </p>
+                        );
+                      }
+
+                      if (displayName === 'Laufzeit') {
+                        return (
+                          <p key={key} className="text-muted-foreground">
+                            {displayName}: {value} Minuten
                           </p>
                         );
                       }
@@ -394,9 +425,9 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
                         entry.abandoned ? "text-red-600" :
                         "text-blue-600"
                       }>
-                        {entry.completed ? "[Abgeschlossen]" :
-                         entry.abandoned ? "[Abgebrochen]" :
-                         "[In Bearbeitung]"}
+                        {entry.completed ? "Abgeschlossen" :
+                         entry.abandoned ? "Abgebrochen" :
+                         "Aktiv"}
                       </span>
                     </p>
                   </div>
