@@ -323,37 +323,41 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
                     </div>
                   )}
                   
-                  {/* --- START: KORRIGIERTER ANZEIGEBLOCK --- */}
                   <div className="space-y-2 text-sm">
-                    {Object.entries(entry.categorySpecificFields).map(([key, value]) => {
-                      if (!value || (Array.isArray(value) && value.length === 0)) return null;
-
+                  {Object.entries(entry.categorySpecificFields)
+                    .filter(([key, value]) => {
+                      // Filtere leere Werte raus
+                      if (!value || (Array.isArray(value) && value.length === 0)) return false;
+                      
                       const displayName = formatFieldName(key);
                       const purelyProgressFields = ["Folgen gesamt", "Spielzeit"];
-                      if (purelyProgressFields.includes(displayName)) {
-                          return null;
-                      }
-
+                      if (purelyProgressFields.includes(displayName)) return false;
+                      
+                      return true;
+                    })
+                    .map(([key, value]) => {
+                      const displayName = formatFieldName(key);
+                      
                       if (displayName === 'Staffeln') {
-                          try {
-                              const seasonsData = JSON.parse(value as string);
-                              if (Array.isArray(seasonsData) && seasonsData.length > 0) {
-                                  return (
-                                      <p key={key} className="text-muted-foreground">
-                                          Anzahl Staffeln: {seasonsData.length}
-                                      </p>
-                                  );
-                              }
-                          } catch { /* Fail silently */ }
-                          return null;
+                        try {
+                          const seasonsData = typeof value === 'string' ? JSON.parse(value) : value;
+                          if (Array.isArray(seasonsData) && seasonsData.length > 0) {
+                            return (
+                              <p key={key} className="text-muted-foreground">
+                                Anzahl Staffeln: {seasonsData.length}
+                              </p>
+                            );
+                          }
+                        } catch { /* Fail silently */ }
+                        return null;
                       }
 
                       if (displayName === 'Seitenanzahl') {
-                          return (
-                              <p key={key} className="text-muted-foreground">
-                                  {displayName}: {value} Seiten
-                              </p>
-                          );
+                        return (
+                          <p key={key} className="text-muted-foreground">
+                            {displayName}: {value} Seiten
+                          </p>
+                        );
                       }
                       
                       if (Array.isArray(value)) {
@@ -374,7 +378,9 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
                           {displayName}: {value}
                         </p>
                       );
-                    })}
+                    })
+                    .filter(Boolean) // Entferne alle null-Werte am Ende
+                  }
                     
                     {entry.customFields.map((field, idx) => (
                       <p key={idx} className="text-muted-foreground">
