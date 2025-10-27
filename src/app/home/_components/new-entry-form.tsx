@@ -107,44 +107,49 @@ export function NewEntryForm({
   );
 
   useEffect(() => {
+    // Wenn ein Eintrag zum Bearbeiten übergeben wird, fülle das Formular
     if (editingEntry) {
       setIsExpanded(true);
       setTitle(editingEntry.title);
       setImage(editingEntry.image);
       setCategorySpecificFields(editingEntry.categorySpecificFields);
+      
+      // Konvertiere die Felder für den State (mit lokalen IDs für React-Keys)
       setCustomFields(
-        editingEntry.customFields.map(f => ({ ...f, id: crypto.randomUUID() }))
+        editingEntry.customFields.map((f) => ({ ...f, id: crypto.randomUUID() }))
       );
       setCompleted(editingEntry.completed);
       setAbandoned(editingEntry.abandoned);
 
       if (editingEntry.readingSessions) {
-        setReadingSessions(editingEntry.readingSessions.map(s => ({
-          ...s,
-          id: crypto.randomUUID()
-        })));
+        setReadingSessions(
+          editingEntry.readingSessions.map((s) => ({ ...s, id: crypto.randomUUID() }))
+        );
       }
-
       if (editingEntry.gamingSessions) {
-        setGamingSessions(editingEntry.gamingSessions.map(s => ({
-          ...s,
-          id: crypto.randomUUID()
-        })));
+        setGamingSessions(
+          editingEntry.gamingSessions.map((s) => ({ ...s, id: crypto.randomUUID() }))
+        );
       }
-
+      
+      // Staffeln parsen, falls vorhanden
       const staffelnData = editingEntry.categorySpecificFields["Staffeln"];
-      if (typeof staffelnData === "string") {
-        try {
-          const parsed = JSON.parse(staffelnData);
-          if (Array.isArray(parsed)) {
-            setSeasons(parsed);
+      if (typeof staffelnData === 'string') {
+          try {
+              const parsed = JSON.parse(staffelnData);
+              if (Array.isArray(parsed)) setSeasons(parsed);
+          } catch (e) {
+              console.error("Fehler beim Parsen der Staffel-Daten im Edit-Modus", e);
           }
-        } catch (e) {
-          console.error("Fehler beim Parsen der Staffel-Daten", e);
-        }
       }
+    } 
+    // Wenn kein Eintrag übergeben wird (Erstellmodus), stelle sicher, dass das Formular leer ist.
+    // Dieser Block wird nur ausgeführt, wenn sich der `isEditing`-Status ändert,
+    // z.B. nach dem Abbrechen einer Bearbeitung.
+    else {
+      resetForm();
     }
-  }, [editingEntry]);
+  }, [editingEntry]); // Dieser Hook hängt NUR von `editingEntry` ab.
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -389,24 +394,24 @@ export function NewEntryForm({
     }
   };
 
-  const resetForm = () => {
-    setTitle("");
-    setImage(undefined);
-    setCategorySpecificFields({});
-    setCustomFields([]);
-    setSeasons([]);
-    setReadingSessions([]);
-    setGamingSessions([]);
-    setCompleted(false);
-    setAbandoned(false);
-    setIsExpanded(false);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-    if (onCancelEdit) {
-      onCancelEdit();
-    }
-  };
+const resetForm = () => {
+    setTitle("");
+    setImage(undefined);
+    setCategorySpecificFields({});
+    setCustomFields([]);
+    setSeasons([]);
+    setReadingSessions([]);
+    setGamingSessions([]);
+    setCompleted(false);
+    setAbandoned(false);
+    setIsExpanded(false);
+    if (!editingEntry) { // Nur im Erstellmodus einklappen
+        setIsExpanded(false);
+    }
+    if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+    }
+};
 
   const handleCancel = () => {
     resetForm();

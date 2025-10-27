@@ -14,32 +14,16 @@ const dbSchema = {
   podcasts: "podcasts",
 } as const;
 
-export async function createEntry(data: EntryData) {
+export async function createEntry(data: EntryData & { id?: string }) {
+  console.log("Server Action: Speichervorgang gestartet", { hasId: !!data.id });
+  
   try {
-    console.log("Server Action: Speichervorgang gestartet");
-    
-    if (!data.title || data.title.trim().length === 0) {
-      return { success: false, error: "Titel ist erforderlich" };
-    }
-
-    const result = await createOrUpdateDynamicEntry(db as any, data);
-    
-    // Die ID kommt von AUTOINCREMENT
-    const insertedId = result.result?.lastInsertRowid 
-      ? String(result.result.lastInsertRowid) 
-      : String(Date.now()); // Fallback
-    
-    revalidatePath('/home');
-
-    return { 
-      success: true, 
-      id: insertedId 
-    };
-
+    const result = await createOrUpdateDynamicEntry(db, data);
+    revalidatePath("/home"); // Seite neu laden, um die Änderungen anzuzeigen
+    return { success: true, id: result.id };
   } catch (error) {
     console.error("Fehler in Server Action:", error);
-    const errorMessage = error instanceof Error ? error.message : "Unbekannter Fehler";
-    return { success: false, error: errorMessage };
+    return { success: false, error: String(error) };
   }
 }
 
