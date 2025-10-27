@@ -53,21 +53,32 @@ export default function HomePage() {
   };
 
   const handleDelete = async (id: string, category: Category) => {
-    console.log(`Versuche zu löschen: ID=${id}, Kategorie=${category}`);
+    console.log(`Versuche zu löschen: ID=${id}, Kategorie=${category}, ID-Typ=${typeof id}`);
     
-    // 1. Server-Action aufrufen
-    const result = await deleteEntry(category, id);
-    
-    if (result.success) {
-      // 2. Lokalen State korrekt aktualisieren
-      // WICHTIG: Verwende die ID, NICHT den Array-Index!
-      setEntries(prevEntries => 
-        prevEntries.filter(entry => entry.id !== id)
-      );
+    try {
+      const result = await deleteEntry(category, id);
       
-      console.log(`Erfolgreich gelöscht: ID=${id}`);
-    } else {
-      alert(`Fehler beim Löschen: ${result.error}`);
+      if (result.success) {
+        console.log(`Server-Delete erfolgreich für ID=${id}`);
+        
+        setEntries(prevEntries => {
+          // WICHTIG: Konvertiere beide IDs zu Strings für sicheren Vergleich!
+          const filtered = prevEntries.filter(entry => {
+            const match = String(entry.id) !== String(id);
+            console.log(`Filter: entry.id=${entry.id} (${typeof entry.id}), id=${id} (${typeof id}), keep=${match}`);
+            return match;
+          });
+          
+          console.log(`Entries vorher: ${prevEntries.length}, nachher: ${filtered.length}`);
+          return filtered;
+        });
+      } else {
+        console.error(`Server-Delete fehlgeschlagen:`, result.error);
+        alert(`Fehler beim Löschen: ${result.error}`);
+      }
+    } catch (error) {
+      console.error(`Delete-Fehler:`, error);
+      alert(`Ein Fehler ist aufgetreten beim Löschen.`);
     }
   };
 
