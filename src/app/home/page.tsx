@@ -8,7 +8,8 @@ import { StatisticsView } from "./_components/statistics-view";
 import { IconChartBar, IconLogout } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { signOut } from "@/lib/auth-client";
-import { getAllEntries, deleteEntry } from "@/actions/create-entry";
+import { getAllEntries } from "@/actions/get-entries";
+import { deleteEntry } from "@/actions/delete-entry";
 import type { Category, MediaEntry } from "@/lib/types";
 
 const categories: { value: Category; label: string }[] = [

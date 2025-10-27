@@ -363,9 +363,9 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
                         entry.abandoned ? "text-red-600" :
                         "text-blue-600"
                       }>
-                        {entry.completed ? "[translate:Abgeschlossen]" :
-                         entry.abandoned ? "[translate:Abgebrochen]" :
-                         "[translate:In Bearbeitung]"}
+                        {entry.completed ? "[Abgeschlossen]" :
+                         entry.abandoned ? "[Abgebrochen]" :
+                         "[In Bearbeitung]"}
                       </span>
                     </p>
                   </div>

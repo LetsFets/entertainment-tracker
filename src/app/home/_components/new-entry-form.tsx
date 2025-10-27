@@ -11,6 +11,8 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Loader2Icon } from "lucide-react";
 import Image from "next/image";
 import { createEntry } from "@/actions/create-entry";
+import { updateEntry } from "@/actions/update-entry";
+import type { EntryData } from "@/lib/types";
 import type { Category, MediaEntry, ReadingSession, GamingSession } from "@/lib/types";
 
 // Lokale Interfaces NUR für React State (MIT id für Rendering)
@@ -367,7 +369,9 @@ export function NewEntryForm({
     };
 
     try {
-      const result = await createEntry(entryData);
+      const result = isEditing 
+        ? await updateEntry(entryData as EntryData & { id: string })
+        : await createEntry(entryData);
 
       if (result.success) {
         const finalEntry: MediaEntry = {

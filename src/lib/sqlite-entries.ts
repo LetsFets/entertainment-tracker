@@ -88,120 +88,107 @@ async function ensureColumnExists(
   }
 }
 
-// HAUPTFUNKTION: JETZT MIT UPDATE-UNTERSTÜTZUNG
-export async function createOrUpdateDynamicEntry(
-  db: DrizzleDB, 
-  data: EntryData & { id?: string } // id ist optional für CREATE, erforderlich für UPDATE
-) {
-  const { id, category, title, image, categorySpecificFields, customFields, readingSessions, gamingSessions, completed, abandoned } = data;
-  
-  // NEUE LOGIK: Prüfe, ob wir einen vorhandenen Eintrag aktualisieren oder einen neuen erstellen
-  const isUpdate = !!id;
-  
+export async function createOrUpdateDynamicEntry(db: DrizzleDB, data: EntryData & { id?: string }) {
+  const { category, title, image, categorySpecificFields, customFields, readingSessions, gamingSessions, completed, abandoned } = data;
+  const isUpdate = !!data.id;
+
   const table = dbSchema[category];
-  if (!table) throw new Error(`Unbekannte Kategorie: ${category}`);
+  if (!table) {
+    throw new Error(`Unbekannte Kategorie: ${category}`);
+  }
+  
   const tableName = table._.config.name;
 
   try {
-    // 1. Tabelle sicherstellen
     await ensureTableExists(db, tableName);
     const existingColumns = await getTableColumns(db, tableName);
 
-    // 2. Daten vorbereiten
-    const dataToInsert: Record<string, any> = {
-        title,
-        completed: completed ? 1 : 0,
-        abandoned: abandoned ? 1 : 0,
-    };
-
-    // Image-Spalte
-    await ensureColumnExists(db, table, 'image', existingColumns);
-    dataToInsert['image'] = image || null;
-
-    // Reading Sessions
+    const dataToInsert: Record<string, any> = {};
+    dataToInsert.title = title;
+    dataToInsert.completed = completed ? 1 : 0;
+    dataToInsert.abandoned = abandoned ? 1 : 0;
+    
+    // IMAGE
+    const imageColName = 'image';
+    await ensureColumnExists(db, table, imageColName, existingColumns);
+    dataToInsert[imageColName] = image || null;
+    
+    // READING SESSIONS
     if (readingSessions && readingSessions.length > 0) {
-        await ensureColumnExists(db, table, 'reading_sessions', existingColumns);
-        const serializableSessions = readingSessions.map(({ id, ...rest }) => rest);
-        dataToInsert['reading_sessions'] = JSON.stringify(serializableSessions);
-    } else {
-        // Wenn keine Sessions vorhanden sind, setze auf null
-        await ensureColumnExists(db, table, 'reading_sessions', existingColumns);
-        dataToInsert['reading_sessions'] = null;
+      const sessionsColName = 'reading_sessions';
+      await ensureColumnExists(db, table, sessionsColName, existingColumns);
+      const serializableSessions = readingSessions.map(({ id, ...rest }) => rest);
+      dataToInsert[sessionsColName] = JSON.stringify(serializableSessions);
     }
-
-    // Gaming Sessions
+    
+    // GAMING SESSIONS
     if (gamingSessions && gamingSessions.length > 0) {
-        await ensureColumnExists(db, table, 'gaming_sessions', existingColumns);
-        const serializableSessions = gamingSessions.map(({ id, ...rest }) => rest);
-        dataToInsert['gaming_sessions'] = JSON.stringify(serializableSessions);
-    } else {
-        await ensureColumnExists(db, table, 'gaming_sessions', existingColumns);
-        dataToInsert['gaming_sessions'] = null;
+      const sessionsColName = 'gaming_sessions';
+      await ensureColumnExists(db, table, sessionsColName, existingColumns);
+      const serializableSessions = gamingSessions.map(({ id, ...rest }) => rest);
+      dataToInsert[sessionsColName] = JSON.stringify(serializableSessions);
     }
-
-    // Kategoriespezifische Felder
+    
+    // CATEGORY-SPECIFIC FIELDS
     for (const [key, value] of Object.entries(categorySpecificFields)) {
       const columnName = key.trim().toLowerCase();
       if (!columnName) continue;
+
       await ensureColumnExists(db, table, columnName, existingColumns);
       
       if (Array.isArray(value)) {
         dataToInsert[columnName] = JSON.stringify(value.filter(v => v.trim() !== ''));
       } else {
-        dataToInsert[columnName] = value || null;
+        dataToInsert[columnName] = value;
       }
     }
 
-    // Custom Fields
+    // CUSTOM FIELDS
     for (const field of customFields) {
       const columnName = field.name.trim().toLowerCase();
       if (!columnName) continue;
+
       await ensureColumnExists(db, table, columnName, existingColumns);
-      dataToInsert[columnName] = field.value || null;
+      dataToInsert[columnName] = field.value;
     }
 
-    // 3. UPDATE oder INSERT
     if (isUpdate) {
-      // UPDATE-LOGIK
-      console.log(`Aktualisiere Eintrag mit ID ${id} in Tabelle ${tableName}`);
-      
-      const updates = Object.entries(dataToInsert).map(([key, value]) => 
-        sql`${sql.identifier(key)} = ${value}`
-      );
+      // UPDATE: Verwende die numerische ID aus data.id
+      const numericId = parseInt(data.id!);
+      if (isNaN(numericId)) {
+        throw new Error(`Ungültige ID für Update: ${data.id}`);
+      }
+
+      const setClause = Object.keys(dataToInsert).map(key => `${sql.identifier(key)} = ?`);
+      const values = Object.values(dataToInsert);
       
       const updateQuery = sql`
-        UPDATE ${sql.identifier(tableName)}
-        SET ${sql.join(updates, sql`, `)}
-        WHERE id = ${id}
+        UPDATE ${sql.identifier(tableName)} 
+        SET ${sql.join(setClause, sql.raw(','))}
+        WHERE id = ${numericId}
       `;
       
-      const result = await db.run(updateQuery);
-      console.log("UPDATE erfolgreich:", result);
-      return { success: true, result, id };
-      
+      await db.run(updateQuery);
+      console.log("UPDATE erfolgreich für ID:", numericId);
+      return { success: true, result: null, id: String(numericId) };
     } else {
-      // INSERT-LOGIK
-      console.log(`Erstelle neuen Eintrag in Tabelle ${tableName}`);
-      
-      // Generiere eine neue ID
-      const newId = crypto.randomUUID();
-      dataToInsert.id = newId;
-      
+      // INSERT: Lass SQLite die ID automatisch generieren (NICHT die UUID verwenden!)
       const keys = Object.keys(dataToInsert);
-      const values = Object.values(dataToInsert);
-      const columns = sql.join(keys.map(k => sql.identifier(k)), sql`, `);
-      const placeholders = sql.join(values.map(v => sql`${v}`), sql`, `);
-      
+      const columnNames = keys.map(key => sql.identifier(key));
+      const valueExpressions = keys.map(key => dataToInsert[key]);
+
       const insertQuery = sql`
-        INSERT INTO ${sql.identifier(tableName)} (${columns})
-        VALUES (${placeholders})
+        INSERT INTO ${sql.identifier(tableName)} (${sql.join(columnNames, sql.raw(','))})
+        VALUES (${sql.join(valueExpressions, sql.raw(','))})
       `;
       
       const result = await db.run(insertQuery);
       console.log("INSERT erfolgreich:", result);
+      
+      // Die neue ID aus dem result extrahieren (lastInsertRowid)
+      const newId = String((result as any).lastInsertRowid || (result as any).lastID);
       return { success: true, result, id: newId };
     }
-
   } catch (error) {
     console.error("[createOrUpdateDynamicEntry] Fehler:", error);
     throw error;
