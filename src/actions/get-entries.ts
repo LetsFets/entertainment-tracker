@@ -53,6 +53,8 @@ export async function getAllEntries(): Promise<{
 }
 
 function parseFields(row: any): Record<string, string | string[]> {
+  console.log('[parseFields] RAW row:', row);  // Debug
+  
   const fields: Record<string, string | string[]> = {};
   const systemFields = ['id', 'title', 'image', 'completed', 'abandoned', 'reading_sessions', 'gaming_sessions', 'created_at'];
   
@@ -82,9 +84,14 @@ function parseFields(row: any): Record<string, string | string[]> {
   };
   
   for (const [key, value] of Object.entries(row)) {
-    const lowerKey = key.toLowerCase();
-    if (!systemFields.includes(lowerKey) && value !== null && value !== undefined) {
-      const displayName = fieldNameMapping[lowerKey] || key;
+    // WICHTIG: Konvertiere einmal und konsistent verwenden!
+    const normalizedKey = key.toLowerCase().replace(/_/g, ' ');
+    
+    if (!systemFields.includes(key.toLowerCase()) && value !== null && value !== undefined) {
+      // Verwende NUR den normalisierten Key für Lookup
+      const displayName = fieldNameMapping[normalizedKey] || key;
+      
+      console.log(`[parseFields] key="${key}" → normalized="${normalizedKey}" → displayName="${displayName}"`);
       
       try {
         const parsed = JSON.parse(value as string);
@@ -95,5 +102,6 @@ function parseFields(row: any): Record<string, string | string[]> {
     }
   }
   
+  console.log('[parseFields] RESULT fields:', fields);
   return fields;
 }

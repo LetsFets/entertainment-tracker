@@ -136,9 +136,17 @@ export async function createOrUpdateDynamicEntry(db: DrizzleDB, data: EntryData 
 
       await ensureColumnExists(db, table, columnName, existingColumns);
       
-      if (Array.isArray(value)) {
-        dataToInsert[columnName] = JSON.stringify(value.filter(v => v.trim() !== ''));
-      } else {
+    if (Array.isArray(value)) {
+    // Prüfe den Typ der Array-Elemente vor dem Filter
+    const filtered = value.filter(v => {
+        if (typeof v === 'string') {
+        return v.trim() !== '';
+        }
+        // Für Objekte (wie Staffeln), behalte alle nicht-null Werte
+        return v !== null && v !== undefined;
+    });
+    dataToInsert[columnName] = JSON.stringify(filtered);
+    } else {
         dataToInsert[columnName] = value;
       }
     }
@@ -153,21 +161,19 @@ export async function createOrUpdateDynamicEntry(db: DrizzleDB, data: EntryData 
     }
 
     if (isUpdate) {
-      // UPDATE: Verwende die numerische ID aus data.id
       const numericId = parseInt(data.id!);
       if (isNaN(numericId)) {
         throw new Error(`Ungültige ID für Update: ${data.id}`);
       }
 
-      const setClause = Object.keys(dataToInsert).map(key => `${sql.identifier(key)} = ?`);
-      const values = Object.values(dataToInsert);
-      
+      const keys = Object.keys(dataToInsert);
+      const setExpressions = keys.map(key => sql`${sql.identifier(key)} = ${dataToInsert[key]}`);
       const updateQuery = sql`
-        UPDATE ${sql.identifier(tableName)} 
-        SET ${sql.join(setClause, sql.raw(','))}
+        UPDATE ${sql.identifier(tableName)}
+        SET ${sql.join(setExpressions, sql.raw(', '))}
         WHERE id = ${numericId}
       `;
-      
+
       await db.run(updateQuery);
       console.log("UPDATE erfolgreich für ID:", numericId);
       return { success: true, result: null, id: String(numericId) };

@@ -109,49 +109,89 @@ export function NewEntryForm({
   );
 
   useEffect(() => {
-    // Wenn ein Eintrag zum Bearbeiten übergeben wird, fülle das Formular
     if (editingEntry) {
       setIsExpanded(true);
       setTitle(editingEntry.title);
       setImage(editingEntry.image);
       setCategorySpecificFields(editingEntry.categorySpecificFields);
-      
-      // Konvertiere die Felder für den State (mit lokalen IDs für React-Keys)
       setCustomFields(
         editingEntry.customFields.map((f) => ({ ...f, id: crypto.randomUUID() }))
       );
       setCompleted(editingEntry.completed);
       setAbandoned(editingEntry.abandoned);
-
+      
       if (editingEntry.readingSessions) {
         setReadingSessions(
           editingEntry.readingSessions.map((s) => ({ ...s, id: crypto.randomUUID() }))
         );
       }
+      
       if (editingEntry.gamingSessions) {
         setGamingSessions(
-          editingEntry.gamingSessions.map((s) => ({ ...s, id: crypto.randomUUID() }))
+          editingEntry.gamingSessions.map((s) => ({...s, id: crypto.randomUUID() }))
         );
       }
       
-      // Staffeln parsen, falls vorhanden
-      const staffelnData = editingEntry.categorySpecificFields["Staffeln"];
-      if (typeof staffelnData === 'string') {
+      // STAFFELN LADEN - Case-insensitive UND flexible Typ-Behandlung!
+      const staffelnKey = Object.keys(editingEntry.categorySpecificFields).find(
+        k => k.toLowerCase() === 'staffeln'
+      );
+
+      const normalizeSeasons = (input: any): { seasonNumber: number; episodes: number }[] => {
+        if (!input) return [];
+        if (Array.isArray(input)) {
+          return input.map((item, idx) => {
+            // Already an object with the expected shape
+            if (item && typeof item === 'object' && 'seasonNumber' in item && 'episodes' in item) {
+              return {
+                seasonNumber: Number((item as any).seasonNumber) || idx + 1,
+                episodes: Number((item as any).episodes) || 0,
+              };
+            }
+            // If the item is a JSON string, try to parse it
+            if (typeof item === 'string') {
+              try {
+                const parsed = JSON.parse(item);
+                if (parsed && typeof parsed === 'object' && 'seasonNumber' in parsed) {
+                  return {
+                    seasonNumber: Number(parsed.seasonNumber) || idx + 1,
+                    episodes: Number(parsed.episodes) || 0,
+                  };
+                }
+              } catch {
+                // Not JSON — treat numeric string as episodes, otherwise fallback
+                const num = Number(item);
+                return { seasonNumber: idx + 1, episodes: isNaN(num) ? 0 : num };
+              }
+            }
+            // Fallback: create a sensible default
+            return { seasonNumber: idx + 1, episodes: 0 };
+          });
+        }
+        if (typeof input === 'string') {
           try {
-              const parsed = JSON.parse(staffelnData);
-              if (Array.isArray(parsed)) setSeasons(parsed);
-          } catch (e) {
-              console.error("Fehler beim Parsen der Staffel-Daten im Edit-Modus", e);
+            const parsed = JSON.parse(input);
+            if (Array.isArray(parsed)) return normalizeSeasons(parsed);
+          } catch {
+            // not JSON, ignore
           }
+        }
+        return [];
+      };
+
+      if (staffelnKey) {
+        const staffelnData = editingEntry.categorySpecificFields[staffelnKey];
+
+        const normalized = normalizeSeasons(staffelnData);
+        if (normalized.length > 0) {
+          console.log('[useEffect] Staffeln normalisiert:', normalized);
+          setSeasons(normalized);
+        }
       }
-    } 
-    // Wenn kein Eintrag übergeben wird (Erstellmodus), stelle sicher, dass das Formular leer ist.
-    // Dieser Block wird nur ausgeführt, wenn sich der `isEditing`-Status ändert,
-    // z.B. nach dem Abbrechen einer Bearbeitung.
-    else {
-      resetForm();
+    } else {
+      setSeasons([]);
     }
-  }, [editingEntry]); // Dieser Hook hängt NUR von `editingEntry` ab.
+  }, [editingEntry]);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -338,18 +378,26 @@ export function NewEntryForm({
     const cleanedFields: Record<string, string | string[]> = {};
     Object.entries(categorySpecificFields).forEach(([key, value]) => {
       if (Array.isArray(value)) {
-        const filtered = value.filter(v => v.trim() !== "");
+        const filtered = value.filter(v => {
+          if (typeof v === 'string') {
+            return v.trim() !== '';
+          }
+          return v !== null && v !== undefined;
+        });
         if (filtered.length > 0) {
           cleanedFields[key] = filtered;
         }
-      } else if (value && value.trim() !== "") {
+      } else if (value && typeof value === 'string' && value.trim() !== "") {
         cleanedFields[key] = value;
       }
     });
 
+    // FÜR SERIEN: Staffeln hinzufügen (überschreibt alte Staffeln)
     if (category === "series" && seasons.length > 0) {
       cleanedFields["Staffeln"] = JSON.stringify(seasons);
     }
+
+    console.log('[handleSubmit] cleanedFields:', cleanedFields);
 
     const entryData = {
       id: isEditing ? editingEntry!.id : undefined,
@@ -367,6 +415,8 @@ export function NewEntryForm({
       completed,
       abandoned,
     };
+
+    console.log('[handleSubmit] entryData:', entryData);
 
     try {
       const result = isEditing 
