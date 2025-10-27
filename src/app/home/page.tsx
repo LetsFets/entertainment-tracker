@@ -52,13 +52,22 @@ export default function HomePage() {
     setEditingEntry(undefined);
   };
 
-  const handleDelete = async (id: string) => {
-    const entry = entries.find(e => e.id === id);
-    if (!entry) return;
+  const handleDelete = async (id: string, category: Category) => {
+    console.log(`Versuche zu löschen: ID=${id}, Kategorie=${category}`);
     
-    const result = await deleteEntry(entry.category, id);
+    // 1. Server-Action aufrufen
+    const result = await deleteEntry(category, id);
+    
     if (result.success) {
-      setEntries(entries.filter((e) => e.id !== id));
+      // 2. Lokalen State korrekt aktualisieren
+      // WICHTIG: Verwende die ID, NICHT den Array-Index!
+      setEntries(prevEntries => 
+        prevEntries.filter(entry => entry.id !== id)
+      );
+      
+      console.log(`Erfolgreich gelöscht: ID=${id}`);
+    } else {
+      alert(`Fehler beim Löschen: ${result.error}`);
     }
   };
 

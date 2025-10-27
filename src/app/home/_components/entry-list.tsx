@@ -3,13 +3,13 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { IconTrash, IconEdit } from "@tabler/icons-react";
-import type { MediaEntry } from "@/lib/types";
+import type { MediaEntry, Category } from "@/lib/types";  // <-- Category importieren!
 import { Badge } from "@/components/ui/badge";
 import Image from "next/image";
 
 interface EntryListProps {
   entries: MediaEntry[];
-  onDelete: (id: string) => void;
+  onDelete: (id: string, category: Category) => void;  // <-- Jetzt mit Category!
   onEdit: (entry: MediaEntry) => void;
 }
 
@@ -395,7 +395,7 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => onDelete(entry.id)}
+                    onClick={() => onDelete(entry.id, entry.category)}  // Beide Parameter!
                     className="text-destructive hover:text-destructive"
                   >
                     <IconTrash className="h-4 w-4" />
