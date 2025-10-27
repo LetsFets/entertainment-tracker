@@ -51,12 +51,37 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
     const currentEpisode = getField(entry, "Aktuelle Folge");
     
     if (!seasonsData || !currentSeason || !currentEpisode ||
-        Array.isArray(seasonsData) || Array.isArray(currentSeason) || Array.isArray(currentEpisode)) {
+        Array.isArray(currentSeason) || Array.isArray(currentEpisode)) {
       return null;
     }
     
     try {
-      const seasons: { seasonNumber: number; episodes: number }[] = JSON.parse(seasonsData as string);
+      // WICHTIG: seasonsData kann String ODER bereits Array sein!
+      let seasons: { seasonNumber: number; episodes: number }[];
+      
+      if (typeof seasonsData === 'string') {
+        seasons = JSON.parse(seasonsData);
+      } else if (Array.isArray(seasonsData)) {
+        // Normalize different possible array shapes (e.g. ["10","8"] or [{seasonNumber:1,episodes:10}, ...])
+        seasons = (seasonsData as any[]).map((s, idx) => {
+          if (typeof s === 'number' || typeof s === 'string') {
+            const episodes = Number(s);
+            return { seasonNumber: idx + 1, episodes: isNaN(episodes) ? 0 : episodes };
+          } else if (s && typeof s === 'object') {
+            const seasonNumber = 'seasonNumber' in s ? Number((s as any).seasonNumber) : idx + 1;
+            const episodes = 'episodes' in s ? Number((s as any).episodes) : 0;
+            return {
+              seasonNumber: isNaN(seasonNumber) ? idx + 1 : seasonNumber,
+              episodes: isNaN(episodes) ? 0 : episodes
+            };
+          } else {
+            return { seasonNumber: idx + 1, episodes: 0 };
+          }
+        });
+      } else {
+        return null;
+      }
+      
       const currentS = parseInt(currentSeason as string);
       const currentE = parseInt(currentEpisode as string);
       
@@ -82,7 +107,7 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
         seasonsInfo
       };
     } catch (e) {
-      console.error("Fehler beim Parsen der Staffel-Daten", e);
+      console.error("Fehler beim Verarbeiten der Staffel-Daten", e);
       return null;
     }
   };
