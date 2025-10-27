@@ -35,6 +35,7 @@ interface EntryData {
   gamingSessions?: GamingSession[];
   completed: boolean;
   abandoned: boolean;
+  completionCount?: number;
 }
 
 const createMockTable = (name: string) => ({
@@ -89,7 +90,7 @@ async function ensureColumnExists(
 }
 
 export async function createOrUpdateDynamicEntry(db: DrizzleDB, data: EntryData & { id?: string }) {
-  const { category, title, image, categorySpecificFields, customFields, readingSessions, gamingSessions, completed, abandoned } = data;
+  const { category, title, image, categorySpecificFields, customFields, readingSessions, gamingSessions, completed, abandoned, completionCount } = data;
   const isUpdate = !!data.id;
 
   const table = dbSchema[category];
@@ -107,6 +108,10 @@ export async function createOrUpdateDynamicEntry(db: DrizzleDB, data: EntryData 
     dataToInsert.title = title;
     dataToInsert.completed = completed ? 1 : 0;
     dataToInsert.abandoned = abandoned ? 1 : 0;
+
+    const completionCountColName = 'completion_count';
+    await ensureColumnExists(db, table, completionCountColName, existingColumns);
+    dataToInsert[completionCountColName] = completionCount ?? 0;
     
     // IMAGE
     const imageColName = 'image';

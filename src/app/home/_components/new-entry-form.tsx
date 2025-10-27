@@ -47,11 +47,12 @@ const categoryFields: Record<Category, { name: string; multi?: boolean; type?: F
     { name: "Durchschnittliche Folgenlänge", type: "number" },
     { name: "Genre", multi: true, type: "text" },
     { name: "Reihe", type: "text" },
-  ],
+],
   movies: [
     { name: "Laufzeit", type: "number" },
-    { name: "Reihe", type: "text" },
+    { name: "Aktuelle Minute", type: "number" }, 
     { name: "Genre", multi: true, type: "text" },
+    { name: "Reihe", type: "text" },
   ],
   videogames: [
     { name: "Spielzeit", type: "number" },
@@ -64,6 +65,7 @@ const categoryFields: Record<Category, { name: string; multi?: boolean; type?: F
     { name: "Host", multi: true, type: "text" },
     { name: "Folgen gesamt", type: "number" },
     { name: "Aktuelle Folge", type: "number" },
+    { name: "Minute", type: "number" },
     { name: "Durchschn. Länge", type: "number" },
     { name: "Genre", multi: true, type: "text" },
     { name: "Reihe", type: "text" },
@@ -98,6 +100,7 @@ export function NewEntryForm({
   const [seasons, setSeasons] = useState<{ seasonNumber: number; episodes: number }[]>([]);
   const [readingSessions, setReadingSessions] = useState<ReadingSessionWithId[]>([]);
   const [gamingSessions, setGamingSessions] = useState<GamingSessionWithId[]>([]);
+  const [completionCount, setCompletionCount] = useState(1);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -107,6 +110,15 @@ export function NewEntryForm({
   const titleExists = existingTitles.some(
     t => t.toLowerCase().trim() === title.toLowerCase().trim()
   );
+
+  // Helper-Funktion: Tage im Monat berechnen
+  const getDaysInMonth = (year: number, month: number): number => {
+    if (month === 2) {
+      // Schaltjahr-Prüfung
+      return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0 ? 29 : 28;
+    }
+    return [4, 6, 9, 11].includes(month) ? 30 : 31;
+  };
 
   useEffect(() => {
     if (editingEntry) {
@@ -119,7 +131,8 @@ export function NewEntryForm({
       );
       setCompleted(editingEntry.completed);
       setAbandoned(editingEntry.abandoned);
-      
+      setCompletionCount(editingEntry.completionCount ?? 1);
+
       if (editingEntry.readingSessions) {
         setReadingSessions(
           editingEntry.readingSessions.map((s) => ({ ...s, id: crypto.randomUUID() }))
@@ -414,6 +427,7 @@ export function NewEntryForm({
         : undefined,
       completed,
       abandoned,
+      completionCount: completionCount >= 0 ? completionCount : 0,
     };
 
     console.log('[handleSubmit] entryData:', entryData);
@@ -427,10 +441,10 @@ export function NewEntryForm({
         const finalEntry: MediaEntry = {
           ...entryData,
           id: result.id!,
-          createdAt: isEditing ? editingEntry!.createdAt : new Date(),
+          createdAt: isEditing ? editingEntry!.createdAt : Date.now(),
         };
         
-        if (isEditing) {
+        if (isEditing && editingEntry) {
           onEntryUpdated(finalEntry);
         } else {
           onEntryCreated(finalEntry);
@@ -628,8 +642,26 @@ const resetForm = () => {
             {/* Lese-Sessions für Bücher */}
             {category === "books" && (
               <div className="space-y-2">
-                <Label>Lese-Sessions</Label>
+                <div className="space-y-2">
+                  <Label>Seitenanzahl {readingSessions.length > 0 && "*"}</Label>
+                  <Input
+                    type="number"
+                    value={categorySpecificFields["Seitenanzahl"] || ""}
+                    onChange={(e) => {
+                      setCategorySpecificFields({
+                        ...categorySpecificFields,
+                        ["Seitenanzahl"]: e.target.value,
+                      });
+                    }}
+                    placeholder="Gesamtanzahl der Seiten"
+                    disabled={pending}
+                    min="1"
+                    required={readingSessions.length > 0}
+                  />
+                </div>
                 
+                {/* Reading Sessions */}
+                <Label>Lese-Sessions</Label>
                 {readingSessions.length === 0 ? (
                   <Button
                     type="button"
@@ -644,95 +676,123 @@ const resetForm = () => {
                   </Button>
                 ) : (
                   <div className="space-y-3">
-                    {readingSessions.map((session, index) => (
-                      <Card key={session.id} className="p-4">
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm font-medium">Session {index + 1}</span>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removeReadingSession(session.id)}
-                              disabled={pending}
-                            >
-                              <IconX className="h-4 w-4" />
-                            </Button>
-                          </div>
-                          
-                          <div className="space-y-2">
-                            <Label>Gelesene Seiten *</Label>
-                            <Input
-                              type="number"
-                              value={session.pages || ""}
-                              onChange={(e) =>
-                                updateReadingSession(session.id, "pages", parseInt(e.target.value) || 0)
-                              }
-                              placeholder="Anzahl Seiten"
-                              disabled={pending}
-                              min="0"
-                            />
-                          </div>
-                          
-                          <div className="space-y-2">
-                            <Label>Datum (optional)</Label>
-                            <div className="grid grid-cols-3 gap-2">
-                              <div>
-                                <Input
-                                  type="number"
-                                  value={session.year || ""}
-                                  onChange={(e) => {
-                                    const year = e.target.value ? parseInt(e.target.value) : undefined;
-                                    updateReadingSession(session.id, "year", year);
-                                    if (!year) {
-                                      updateReadingSession(session.id, "month", undefined);
-                                      updateReadingSession(session.id, "day", undefined);
-                                    }
-                                  }}
-                                  placeholder="Jahr"
-                                  disabled={pending}
-                                  min="1900"
-                                  max="2100"
-                                />
-                              </div>
-                              <div>
-                                <Input
-                                  type="number"
-                                  value={session.month || ""}
-                                  onChange={(e) => {
-                                    const month = e.target.value ? parseInt(e.target.value) : undefined;
-                                    updateReadingSession(session.id, "month", month);
-                                    if (!month) {
-                                      updateReadingSession(session.id, "day", undefined);
-                                    }
-                                  }}
-                                  placeholder="Monat"
-                                  disabled={pending || !session.year}
-                                  min="1"
-                                  max="12"
-                                />
-                              </div>
-                              <div>
-                                <Input
-                                  type="number"
-                                  value={session.day || ""}
-                                  onChange={(e) =>
-                                    updateReadingSession(session.id, "day", e.target.value ? parseInt(e.target.value) : undefined)
-                                  }
-                                  placeholder="Tag"
-                                  disabled={pending || !session.year || !session.month}
-                                  min="1"
-                                  max="31"
-                                />
-                              </div>
+                    {readingSessions.map((session, index) => {
+                      const maxDay = session.year && session.month 
+                        ? getDaysInMonth(session.year, session.month) 
+                        : 31;
+                      
+                      return (
+                        <Card key={session.id} className="p-4">
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-sm font-medium">Session {index + 1}</span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeReadingSession(session.id)}
+                                disabled={pending}
+                              >
+                                <IconX className="h-4 w-4" />
+                              </Button>
                             </div>
-                            <p className="text-xs text-muted-foreground">
-                              Jahr ist erforderlich für Monat/Tag
-                            </p>
+                            
+                            <div className="space-y-2">
+                              <Label>Gelesene Seiten *</Label>
+                              <Input
+                                type="number"
+                                value={session.pages || ""}
+                                onChange={(e) =>
+                                  updateReadingSession(session.id, "pages", parseInt(e.target.value) || 0)
+                                }
+                                placeholder="Anzahl Seiten"
+                                disabled={pending}
+                                min="0"
+                              />
+                            </div>
+                            
+                            <div className="space-y-2">
+                              <Label>Datum (optional)</Label>
+                              <div className="grid grid-cols-3 gap-2">
+                                {/* Jahr */}
+                                <div>
+                                  <Input
+                                    type="number"
+                                    value={session.year || ""}
+                                    onChange={(e) => {
+                                      const year = e.target.value ? parseInt(e.target.value) : undefined;
+                                      updateReadingSession(session.id, "year", year);
+                                      if (!year) {
+                                        updateReadingSession(session.id, "month", undefined);
+                                        updateReadingSession(session.id, "day", undefined);
+                                      }
+                                    }}
+                                    placeholder="Jahr"
+                                    disabled={pending}
+                                    min="1900"
+                                    max={new Date().getFullYear()}
+                                  />
+                                </div>
+                                
+                                {/* Monat - Dropdown */}
+                                <div>
+                                  <select
+                                    value={session.month || ""}
+                                    onChange={(e) => {
+                                      const month = e.target.value ? parseInt(e.target.value) : undefined;
+                                      updateReadingSession(session.id, "month", month);
+                                      if (!month) {
+                                        updateReadingSession(session.id, "day", undefined);
+                                      } else if (session.day && session.year) {
+                                        // Korrigiere Tag falls er jetzt ungültig ist
+                                        const newMaxDay = getDaysInMonth(session.year, month);
+                                        if (session.day > newMaxDay) {
+                                          updateReadingSession(session.id, "day", newMaxDay);
+                                        }
+                                      }
+                                    }}
+                                    disabled={pending || !session.year}
+                                    className="w-full h-10 px-3 py-2 border rounded-md"
+                                  >
+                                    <option value="">Monat</option>
+                                    <option value="1">Januar</option>
+                                    <option value="2">Februar</option>
+                                    <option value="3">März</option>
+                                    <option value="4">April</option>
+                                    <option value="5">Mai</option>
+                                    <option value="6">Juni</option>
+                                    <option value="7">Juli</option>
+                                    <option value="8">August</option>
+                                    <option value="9">September</option>
+                                    <option value="10">Oktober</option>
+                                    <option value="11">November</option>
+                                    <option value="12">Dezember</option>
+                                  </select>
+                                </div>
+                                
+                                {/* Tag */}
+                                <div>
+                                  <Input
+                                    type="number"
+                                    value={session.day || ""}
+                                    onChange={(e) =>
+                                      updateReadingSession(session.id, "day", e.target.value ? parseInt(e.target.value) : undefined)
+                                    }
+                                    placeholder="Tag"
+                                    disabled={pending || !session.year || !session.month}
+                                    min="1"
+                                    max={maxDay}
+                                  />
+                                </div>
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                Jahr ist erforderlich für Monat/Tag
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      </Card>
-                    ))}
+                        </Card>
+                      );
+                    })}
                     <Button
                       type="button"
                       variant="outline"
@@ -878,6 +938,9 @@ const resetForm = () => {
             <div className="space-y-4">
               {availableFields.map((field) => {
                 if (field.isSeasonConfig || field.isReadingSession || field.isGamingSession) return null;
+
+                  // Überspringe Seitenanzahl - wird manuell oberhalb der Lese-Sessions gerendert
+                  if (category === "books" && field.name === "Seitenanzahl") return null;
                 
                 if (category === "series" && field.name === "Aktuelle Staffel") {
                   if (seasons.length === 0) {
@@ -1142,6 +1205,18 @@ const resetForm = () => {
                 </label>
               </div>
 
+              <div className="space-y-2">
+                <Label>Anzahl der Durchläufe</Label>
+                <Input
+                  type="number"
+                  value={completionCount}
+                  onChange={(e) => setCompletionCount(Number(e.target.value))}
+                  placeholder="Wie oft abgeschlossen?"
+                  disabled={pending}
+                  min="0"
+                />
+              </div>
+
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="abandoned"
@@ -1161,7 +1236,11 @@ const resetForm = () => {
 
           {/* Buttons */}
           <div className="flex gap-2 pt-4">
-            <Button type="submit" disabled={pending || !title} className="flex-1">
+            <Button 
+              type="submit" 
+              disabled={pending || !title || titleExists}
+              className="flex-1"
+            >
               {pending ? (
                 <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
               ) : isEditing ? (

@@ -27,7 +27,17 @@ export interface EntryData {
   abandoned: boolean;
 }
 
-export interface MediaEntry extends EntryData {
+export interface MediaEntry {
   id: string;
-  createdAt: Date;
+  title: string;
+  category: Category;
+  completed: boolean;
+  abandoned: boolean;
+  completionCount?: number;
+  categorySpecificFields: Record<string, string | string[]>;
+  customFields: Array<{ name: string; value: string }>;
+  readingSessions?: ReadingSession[];
+  gamingSessions?: GamingSession[];
+  image?: string;
+  createdAt: number;
 }

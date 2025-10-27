@@ -34,7 +34,6 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
     );
   }
 
-  // --- START: NEUE HELFERFUNKTION ---
   // Formatiert einen DB-Schlüssel (z.B. "aktuelle_folge") in einen Anzeigenamen (z.B. "Aktuelle Folge")
   const formatFieldName = (key: string): string => {
     return key
@@ -43,7 +42,6 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' ');
   };
-  // --- ENDE: NEUE HELFERFUNKTION ---
 
   const calculateSeriesProgress = (entry: MediaEntry): { text: string; percentage: number; seasonsInfo: string } | null => {
     const seasonsData = getField(entry, "Staffeln");
@@ -112,9 +110,14 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
     }
   };
 
-  const calculatePodcastProgress = (entry: MediaEntry): { text: string; percentage: number } | null => {
+  const calculatePodcastProgress = (entry: MediaEntry): { 
+    text: string; 
+    percentage: number;
+    currentMinute?: string;
+  } | null => {
     const totalEpisodes = getField(entry, "Folgen gesamt");
     const currentEpisode = getField(entry, "Aktuelle Folge");
+    const currentMinute = getField(entry, "Aktuelle Minute");
     
     if (totalEpisodes && currentEpisode && !Array.isArray(totalEpisodes) && !Array.isArray(currentEpisode)) {
       const total = parseInt(totalEpisodes as string);
@@ -122,8 +125,18 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
       
       if (total > 0 && current >= 0) {
         const percentage = Math.min((current / total) * 100, 100);
+        
+        // Formatiere Text mit aktueller Minute (falls vorhanden)
+        let text = `Folge ${current} von ${total}`;
+        if (currentMinute && !Array.isArray(currentMinute)) {
+          const minute = parseInt(currentMinute as string);
+          if (minute > 0) {
+            text += ` (bei Min. ${minute})`;
+          }
+        }
+        
         return {
-          text: `Folge ${current} von ${total}`,
+          text,
           percentage
         };
       }
@@ -189,6 +202,28 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
       totalPercentage,
       sessionsInfo
     };
+  };
+
+  const calculateMovieProgress = (entry: MediaEntry): { text: string; percentage: number } | null => {
+    const totalMinutes = getField(entry, "Laufzeit");
+    const currentMinute = getField(entry, "Aktuelle Minute");
+    
+    if (!totalMinutes || !currentMinute || Array.isArray(totalMinutes) || Array.isArray(currentMinute)) {
+      return null;
+    }
+    
+    const total = parseInt(totalMinutes as string);
+    const current = parseInt(currentMinute as string);
+    
+    if (total > 0 && current >= 0 && current <= total) {
+      const percentage = (current / total) * 100;
+      return {
+        text: `${current} von ${total} Minuten`,
+        percentage
+      };
+    }
+    
+    return null;
   };
 
   const calculateTimeBar = (entry: MediaEntry): { 
@@ -257,6 +292,7 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
         const seriesProgress = entry.category === "series" ? calculateSeriesProgress(entry) : null;
         const podcastProgress = entry.category === "podcasts" ? calculatePodcastProgress(entry) : null;
         const bookProgress = entry.category === "books" ? calculateBookProgress(entry) : null;
+        const movieProgress = entry.category === "movies" ? calculateMovieProgress(entry) : null;
         const progress = seriesProgress || podcastProgress;
         const timeBar = entry.category === "videogames" ? calculateTimeBar(entry) : null;
         
@@ -314,11 +350,26 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
                     </div>
                   )}
 
+                  {movieProgress && !entry.completed && !entry.abandoned && (
+                    <div className="mb-4 space-y-2">
+                      <div className="flex justify-between text-sm text-muted-foreground">
+                        <span>Filmfortschritt</span>
+                        <span>{movieProgress.text} ({Math.round(movieProgress.percentage)}%)</span>
+                      </div>
+                      <div className="w-full h-2 bg-secondary rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary transition-all duration-300"
+                          style={{ width: `${movieProgress.percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   {timeBar && (
                     <div className="mb-4 space-y-2">
                       <div className="flex justify-between text-sm text-muted-foreground">
                         <span>Spielzeit</span>
-                        <span>{timeBar.totalTime} Stunden{timeBar.basePlaytime > 0 && timeBar.segments.length > 1 ? ` (${timeBar.basePlaytime} h Basis + ${timeBar.totalTime - timeBar.basePlaytime} h gespielt)` : ''}</span>
+                        <span>{timeBar.totalTime} Stunden{timeBar.basePlaytime > 0 && timeBar.segments.length > 1 ? `` : ''}</span>
                       </div>
                       <div className="w-full h-2 bg-secondary rounded-full overflow-hidden flex">
                         {timeBar.segments.map((segment, idx) => (
@@ -426,21 +477,26 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
                         "text-blue-600"
                       }>
                         {entry.completed ? "Abgeschlossen" :
-                         entry.abandoned ? "Abgebrochen" :
-                         "Aktiv"}
+                        entry.abandoned ? "Abgebrochen" :
+                        "Aktiv"}
                       </span>
+                        {(entry.completionCount ?? 0) > 0 && (
+                          <span className="ml-2 text-sm text-gray-500">
+                            ({entry.completionCount}x abgeschlossen)
+                          </span>
+                        )}
                     </p>
                   </div>
-                  {/* --- ENDE: KORRIGIERTER ANZEIGEBLOCK --- */}
                 </div>
                 
                 {entry.image && (
-                  <div className="relative w-24 h-36 sm:w-32 sm:h-48 rounded overflow-hidden border flex-shrink-0">
+                  <div className="relative w-20 h-32 sm:w-24 sm:h-36 md:w-28 md:h-42 lg:w-32 lg:h-48 rounded overflow-hidden border flex-shrink-0">
                     <Image
                       src={entry.image}
                       alt={entry.title}
                       fill
                       className="object-cover"
+                      sizes="(max-width: 640px) 80px, (max-width: 768px) 96px, (max-width: 1024px) 112px, 128px"
                     />
                   </div>
                 )}

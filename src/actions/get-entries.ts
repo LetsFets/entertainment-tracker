@@ -36,6 +36,7 @@ export async function getAllEntries(): Promise<{
           gamingSessions: row.gaming_sessions ? JSON.parse(row.gaming_sessions) : undefined,
           completed: row.completed === 1,
           abandoned: row.abandoned === 1,
+          completionCount: row.completion_count ? Number(row.completion_count) : 0,
           createdAt: new Date(row.created_at || Date.now()),
         }));
         
@@ -56,7 +57,7 @@ function parseFields(row: any): Record<string, string | string[]> {
   console.log('[parseFields] RAW row:', row);  // Debug
   
   const fields: Record<string, string | string[]> = {};
-  const systemFields = ['id', 'title', 'image', 'completed', 'abandoned', 'reading_sessions', 'gaming_sessions', 'created_at'];
+  const systemFields = ['id', 'title', 'image', 'completed', 'abandoned', 'completion_count', 'reading_sessions', 'gaming_sessions', 'created_at'];
   
   const fieldNameMapping: Record<string, string> = {
     // Bücher
@@ -72,6 +73,7 @@ function parseFields(row: any): Record<string, string | string[]> {
     
     // Filme
     'laufzeit': 'Laufzeit',
+    'aktuelle minute': 'Aktuelle Minute',
     
     // Videospiele
     'spielzeit': 'Spielzeit',
@@ -80,6 +82,7 @@ function parseFields(row: any): Record<string, string | string[]> {
     // Podcasts
     'host': 'Host',
     'folgen gesamt': 'Folgen gesamt',
+    'minute': 'Minute',
     'durchschn. länge': 'Durchschn. Länge',
   };
   

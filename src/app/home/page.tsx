@@ -22,9 +22,30 @@ const categories: { value: Category; label: string }[] = [
 
 export default function HomePage() {
   const [entries, setEntries] = useState<MediaEntry[]>([]);
-  const [activeCategory, setActiveCategory] = useState<Category | "stats">("books");
   const [isLoaded, setIsLoaded] = useState(false);
   const [editingEntry, setEditingEntry] = useState<MediaEntry | undefined>(undefined);
+
+    // Tab-State mit localStorage-Persistenz
+    const [activeCategory, setActiveCategory] = useState<Category | "stats">(() => {
+      // Beim ersten Laden: Versuche aus localStorage zu lesen
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem('activeTab');
+        return (saved as Category | "stats") || "books";
+      }
+      return "books";
+    });
+
+    // Speichere Tab-Wechsel im localStorage
+    const handleTabChange = (newTab: string) => {
+      const tab = newTab as Category | "stats";
+      setActiveCategory(tab);
+      localStorage.setItem('activeTab', tab);
+      
+      // Beim Tab-Wechsel: Editing-Zustand zurücksetzen
+      if (newTab !== activeCategory) {
+        setEditingEntry(undefined);
+      }
+    };
 
   useEffect(() => {
     async function loadEntries() {
@@ -48,7 +69,13 @@ export default function HomePage() {
   };
 
   const handleEntryUpdated = (updatedEntry: MediaEntry) => {
-    setEntries(entries.map(e => e.id === updatedEntry.id ? updatedEntry : e));
+    setEntries(prevEntries => 
+      prevEntries.map(e => 
+        e.id === updatedEntry.id && e.category === updatedEntry.category
+          ? updatedEntry 
+          : e
+      )
+    );
     setEditingEntry(undefined);
   };
 
@@ -131,10 +158,7 @@ export default function HomePage() {
       </div>
 
       <Tabs value={activeCategory} onValueChange={(v) => {
-        setActiveCategory(v as Category | "stats");
-        if (v !== activeCategory) {
-          setEditingEntry(undefined);
-        }
+        handleTabChange(v);
       }}>
         <TabsList className="grid w-full grid-cols-6">
           {categories.map((cat) => (

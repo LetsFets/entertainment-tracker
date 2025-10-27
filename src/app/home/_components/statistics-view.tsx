@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import type { MediaEntry } from "./new-entry-form";
+import type { MediaEntry } from "@/lib/types";
 import { useMemo } from "react";
 
 interface StatisticsViewProps {
@@ -19,176 +19,199 @@ interface GenreStats {
   [genre: string]: number;
 }
 
-interface DateActivity {
-  date: string;
-  count: number;
-  type: 'pages' | 'minutes';
-}
-
 export function StatisticsView({ entries }: StatisticsViewProps) {
   const stats = useMemo(() => {
-    // Serien-Statistiken
-    const seriesStats: TimeStats = { totalMinutes: 0, completedMinutes: 0, inProgressMinutes: 0 };
-    
-    entries.filter(e => e.category === "series").forEach(entry => {
-      const avgLength = parseInt(entry.categorySpecificFields["Durchschnittliche Folgenlänge"] as string || "0");
-      const staffelnData = entry.categorySpecificFields["Staffeln"];
-      const currentSeason = parseInt(entry.categorySpecificFields["Aktuelle Staffel"] as string || "0");
-      const currentEpisode = parseInt(entry.categorySpecificFields["Aktuelle Folge"] as string || "0");
-      
-      if (staffelnData && typeof staffelnData === "string" && avgLength > 0) {
-        try {
-          const seasons = JSON.parse(staffelnData);
-          const totalEpisodes = seasons.reduce((sum: number, s: any) => sum + s.episodes, 0);
-          
-          let watchedEpisodes = 0;
-          for (let i = 0; i < currentSeason - 1 && i < seasons.length; i++) {
-            watchedEpisodes += seasons[i].episodes;
-          }
-          watchedEpisodes += currentEpisode;
-          
-          const totalTime = totalEpisodes * avgLength;
-          const watchedTime = watchedEpisodes * avgLength;
-          
-          if (entry.completed) {
-            seriesStats.completedMinutes += totalTime;
-          } else {
-            seriesStats.inProgressMinutes += watchedTime;
-          }
-          seriesStats.totalMinutes += entry.completed ? totalTime : watchedTime;
-        } catch (e) {
-          console.error("Parse error", e);
+
+  // 1. SERIEN
+  const seriesStats: TimeStats = { totalMinutes: 0, completedMinutes: 0, inProgressMinutes: 0 };
+
+  entries.filter(e => e.category === "series").forEach(entry => {
+    const avgLength = parseInt(entry.categorySpecificFields["Durchschnittliche Folgenlänge"] as string || "0");
+    const staffelnData = entry.categorySpecificFields["Staffeln"];
+    const currentSeason = parseInt(entry.categorySpecificFields["Aktuelle Staffel"] as string || "0");
+    const currentEpisode = parseInt(entry.categorySpecificFields["Aktuelle Folge"] as string || "0");
+    const completionCount = Number(entry.completionCount) || 0;
+
+    if (staffelnData && typeof staffelnData === "string" && avgLength > 0) {
+      try {
+        const seasons = JSON.parse(staffelnData);
+        const totalEpisodes = seasons.reduce((sum: number, s: any) => sum + s.episodes, 0);
+        
+        let watchedEpisodes = 0;
+        for (let i = 0; i < currentSeason - 1 && i < seasons.length; i++) {
+          watchedEpisodes += seasons[i].episodes;
         }
+        watchedEpisodes += currentEpisode;
+        
+        const totalTime = totalEpisodes * avgLength;
+        const watchedTime = watchedEpisodes * avgLength;
+        
+        // Frühere Durchgänge
+        if (completionCount > 0) {
+          seriesStats.completedMinutes += totalTime * completionCount;
+          seriesStats.totalMinutes += totalTime * completionCount;
+        }
+        
+        // Aktueller Durchgang
+        if (!entry.completed && !entry.abandoned) {
+          seriesStats.inProgressMinutes += watchedTime;
+          seriesStats.totalMinutes += watchedTime;
+        } else if (entry.completed) {
+          seriesStats.completedMinutes += totalTime;
+          seriesStats.totalMinutes += totalTime;
+        }
+      } catch (e) {
+        console.error("Parse error", e);
       }
-    });
-    
-    // Film-Statistiken
-    const movieStats: TimeStats = { totalMinutes: 0, completedMinutes: 0, inProgressMinutes: 0 };
-    
-    entries.filter(e => e.category === "movies").forEach(entry => {
-      const runtime = parseInt(entry.categorySpecificFields["Laufzeit"] as string || "0");
+    }
+  });
+
+  // 2. FILME
+  const movieStats: TimeStats = { totalMinutes: 0, completedMinutes: 0, inProgressMinutes: 0 };
+
+  entries.filter(e => e.category === "movies").forEach(entry => {
+    const runtime = parseInt(entry.categorySpecificFields["Laufzeit"] as string || "0");
+    const currentMinute = parseInt(entry.categorySpecificFields["Aktuelle Minute"] as string || "0");
+    const completionCount = Number(entry.completionCount) || 0;
+
+    if (runtime > 0) {
+      // Frühere Durchgänge
+      if (completionCount > 0) {
+        movieStats.completedMinutes += runtime * completionCount;
+        movieStats.totalMinutes += runtime * completionCount;
+      }
       
-      if (entry.completed && runtime > 0) {
+      // Aktueller Durchgang
+      if (!entry.completed && !entry.abandoned && currentMinute > 0) {
+        movieStats.inProgressMinutes += currentMinute;
+        movieStats.totalMinutes += currentMinute;
+      } else if (entry.completed) {
         movieStats.completedMinutes += runtime;
         movieStats.totalMinutes += runtime;
       }
-    });
+    }
+  });
+
+  // 3. PODCASTS
+  const podcastStats: TimeStats = { totalMinutes: 0, completedMinutes: 0, inProgressMinutes: 0 };
+
+  entries.filter(e => e.category === "podcasts").forEach(entry => {
+    const totalEpisodes = parseInt(entry.categorySpecificFields["Folgen gesamt"] as string || "0");
+    const currentEpisode = parseInt(entry.categorySpecificFields["Aktuelle Folge"] as string || "0");
+    const currentMinute = parseInt(entry.categorySpecificFields["Minute"] as string || "0");
+    const avgLength = parseInt(entry.categorySpecificFields["Durchschn. Länge"] as string || "0");
+    const completionCount = Number(entry.completionCount) || 0;
+
+    if (avgLength > 0 && totalEpisodes > 0) {
+      const totalTime = totalEpisodes * avgLength;
+      
+      // Frühere Durchgänge
+      if (completionCount > 0) {
+        podcastStats.completedMinutes += totalTime * completionCount;
+        podcastStats.totalMinutes += totalTime * completionCount;
+      }
+      
+      // Aktueller Durchgang
+      if (!entry.completed && !entry.abandoned && currentEpisode > 0) {
+        const completedEpisodesTime = Math.max(0, currentEpisode - 1) * avgLength;
+        const currentProgress = currentMinute;
+        const totalListened = completedEpisodesTime + currentProgress;
+        podcastStats.inProgressMinutes += totalListened;
+        podcastStats.totalMinutes += totalListened;
+      } else if (entry.completed) {
+        podcastStats.completedMinutes += totalTime;
+        podcastStats.totalMinutes += totalTime;
+      }
+    }
+  });
+
+  // 4. VIDEOSPIELE
+  const gameStats: TimeStats = { totalMinutes: 0, completedMinutes: 0, inProgressMinutes: 0 };
+
+  entries.filter(e => e.category === "videogames").forEach(entry => {
+    const basePlaytime = parseInt(entry.categorySpecificFields["Spielzeit"] as string || "0");
+    const sessions = entry.gamingSessions;
+    const completionCount = Number(entry.completionCount) || 0;
+
+    const sessionTime = sessions && sessions.length > 0
+      ? sessions.reduce((sum: number, s: { duration: number }) => sum + s.duration, 0)
+      : 0;
     
-    // Videospiel-Statistiken
-    const gameStats: TimeStats = { totalMinutes: 0, completedMinutes: 0, inProgressMinutes: 0 };
+    const totalHours = basePlaytime + sessionTime;
+    const minutes = totalHours * 60;
     
-    entries.filter(e => e.category === "videogames").forEach(entry => {
-      if (entry.gamingSessions && entry.gamingSessions.length > 0) {
-        const totalHours = entry.gamingSessions.reduce((sum, s) => sum + s.duration, 0);
-        const minutes = totalHours * 60;
-        
-        if (entry.completed) {
-          gameStats.completedMinutes += minutes;
-        } else {
-          gameStats.inProgressMinutes += minutes;
-        }
+    if (minutes > 0) {
+      // Frühere Durchgänge
+      if (completionCount > 0) {
+        gameStats.completedMinutes += minutes * completionCount;
+        gameStats.totalMinutes += minutes * completionCount;
+      }
+      
+      // Aktueller Durchgang
+      if (!entry.completed) {
+        gameStats.inProgressMinutes += minutes;
+        gameStats.totalMinutes += minutes;
+      } else {
+        gameStats.completedMinutes += minutes;
         gameStats.totalMinutes += minutes;
       }
-    });
+    }
+  });
+
+  // 5. BÜCHER
+  let totalPages = 0;
+  let completedPages = 0;
+  let inProgressPages = 0;
+
+  entries.filter(e => e.category === "books").forEach(entry => {
+    const pages = parseInt(entry.categorySpecificFields["Seitenanzahl"] as string || "0");
+    const completionCount = Number(entry.completionCount) || 0;
     
-    // Podcast-Statistiken
-    const podcastStats: TimeStats = { totalMinutes: 0, completedMinutes: 0, inProgressMinutes: 0 };
-    
-    entries.filter(e => e.category === "podcasts").forEach(entry => {
-      const totalEpisodes = parseInt(entry.categorySpecificFields["Folgen gesamt"] as string || "0");
-      const currentEpisode = parseInt(entry.categorySpecificFields["Aktuelle Folge"] as string || "0");
-      const avgLength = parseInt(entry.categorySpecificFields["Durchschn. Länge"] as string || "0");
-      
-      if (avgLength > 0) {
-        const listenedTime = currentEpisode * avgLength;
-        const totalTime = totalEpisodes * avgLength;
-        
-        if (entry.completed) {
-          podcastStats.completedMinutes += totalTime;
-          podcastStats.totalMinutes += totalTime;
-        } else {
-          podcastStats.inProgressMinutes += listenedTime;
-          podcastStats.totalMinutes += listenedTime;
-        }
+    if (entry.readingSessions && entry.readingSessions.length > 0) {
+      const readPages = entry.readingSessions.reduce((sum: number, s: { pages: number }) => sum + s.pages, 0);
+
+      // Frühere Durchgänge
+      if (completionCount > 0) {
+        completedPages += pages * completionCount;
+        totalPages += pages * completionCount;
       }
-    });
-    
-    // Buch-Statistiken
-    let totalPages = 0;
-    let completedPages = 0;
-    let inProgressPages = 0;
-    
-    entries.filter(e => e.category === "books").forEach(entry => {
-      const pages = parseInt(entry.categorySpecificFields["Seitenanzahl"] as string || "0");
       
-      if (entry.readingSessions && entry.readingSessions.length > 0) {
-        const readPages = entry.readingSessions.reduce((sum, s) => sum + s.pages, 0);
-        
-        if (entry.completed) {
-          completedPages += pages;
-          totalPages += pages;
-        } else {
-          inProgressPages += readPages;
-          totalPages += readPages;
-        }
-      } else if (entry.completed && pages > 0) {
+      // Aktueller Durchgang
+      if (!entry.completed && !entry.abandoned) {
+        inProgressPages += readPages;
+        totalPages += readPages;
+      } else if (entry.completed) {
         completedPages += pages;
         totalPages += pages;
       }
-    });
+    } else if (entry.completed && pages > 0) {
+      const multiplier = completionCount > 0 ? completionCount : 1;
+      completedPages += pages * multiplier;
+      totalPages += pages * multiplier;
+    }
+  });
     
-    // Genre-Statistiken (alle Kategorien)
-    const allGenres: GenreStats = {};
-    const genresByCategory: { [key: string]: GenreStats } = {
-      books: {},
-      series: {},
-      movies: {},
-      videogames: {},
-      podcasts: {}
-    };
-    
-    entries.forEach(entry => {
-      const genres = entry.categorySpecificFields["Genre"];
-      if (Array.isArray(genres)) {
-        genres.forEach(genre => {
-          if (genre.trim()) {
-            allGenres[genre] = (allGenres[genre] || 0) + 1;
-            genresByCategory[entry.category][genre] = (genresByCategory[entry.category][genre] || 0) + 1;
-          }
-        });
-      }
-    });
-    
-    // Aktivste Tage (Reading/Gaming Sessions mit Datum)
-    const dateActivity: { [date: string]: DateActivity } = {};
-    
-    entries.forEach(entry => {
-      if (entry.readingSessions) {
-        entry.readingSessions.forEach(session => {
-          if (session.year) {
-            const dateKey = `${session.year}-${String(session.month || 1).padStart(2, '0')}-${String(session.day || 1).padStart(2, '0')}`;
-            if (!dateActivity[dateKey]) {
-              dateActivity[dateKey] = { date: dateKey, count: 0, type: 'pages' };
-            }
-            dateActivity[dateKey].count += session.pages;
-          }
-        });
-      }
-      
-      if (entry.gamingSessions) {
-        entry.gamingSessions.forEach(session => {
-          if (session.year) {
-            const dateKey = `${session.year}-${String(session.month || 1).padStart(2, '0')}-${String(session.day || 1).padStart(2, '0')}`;
-            if (!dateActivity[dateKey]) {
-              dateActivity[dateKey] = { date: dateKey, count: 0, type: 'minutes' };
-            }
-            dateActivity[dateKey].count += session.duration * 60;
-          }
-        });
-      }
-    });
-    
-    const mostActiveDay = Object.values(dateActivity).sort((a, b) => b.count - a.count)[0];
+  // Genre-Statistiken (alle Kategorien)
+  const allGenres: GenreStats = {};
+  const genresByCategory: { [key: string]: GenreStats } = {
+    books: {},
+    series: {},
+    movies: {},
+    videogames: {},
+    podcasts: {}
+  };
+  
+  entries.forEach(entry => {
+    const genres = entry.categorySpecificFields["Genre"];
+    if (Array.isArray(genres)) {
+      genres.forEach(genre => {
+        if (genre.trim()) {
+          allGenres[genre] = (allGenres[genre] || 0) + 1;
+          genresByCategory[entry.category][genre] = (genresByCategory[entry.category][genre] || 0) + 1;
+        }
+      });
+    }
+  });
     
     return {
       seriesStats,
@@ -199,8 +222,7 @@ export function StatisticsView({ entries }: StatisticsViewProps) {
       completedPages,
       inProgressPages,
       allGenres,
-      genresByCategory,
-      mostActiveDay
+      genresByCategory
     };
   }, [entries]);
   
@@ -217,7 +239,12 @@ export function StatisticsView({ entries }: StatisticsViewProps) {
   
   const GenreChart = ({ genres, title }: { genres: GenreStats; title: string }) => {
     const sortedGenres = Object.entries(genres).sort((a, b) => b[1] - a[1]).slice(0, 10);
-    const maxCount = Math.max(...sortedGenres.map(([, count]) => count), 1);
+    const totalCount = sortedGenres.reduce((sum, [, count]) => sum + count, 0);
+    
+    const colors = [
+      "bg-blue-500", "bg-purple-500", "bg-teal-500", "bg-amber-500", "bg-rose-500",
+      "bg-emerald-500", "bg-indigo-500", "bg-cyan-500", "bg-orange-500", "bg-fuchsia-500"
+    ];
     
     return (
       <Card>
@@ -225,21 +252,37 @@ export function StatisticsView({ entries }: StatisticsViewProps) {
           <CardTitle className="text-base">{title}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            {sortedGenres.map(([genre, count]) => (
-              <div key={genre} className="space-y-1">
-                <div className="flex justify-between text-sm">
-                  <span className="font-medium">{genre}</span>
-                  <span className="text-muted-foreground">{count}</span>
+          {/* Dynamische Bar mit Anteilen */}
+          <div className="w-full h-8 bg-secondary rounded-full overflow-hidden flex mb-4">
+            {sortedGenres.map(([genre, count], index) => {
+              const percentage = totalCount > 0 ? (count / totalCount) * 100 : 0;
+              return (
+                <div
+                  key={genre}
+                  className={`h-full ${colors[index % colors.length]} transition-all duration-300`}
+                  style={{ width: `${percentage}%` }}
+                  title={`${genre}: ${count} (${percentage.toFixed(1)}%)`}
+                />
+              );
+            })}
+          </div>
+          
+          {/* Legende */}
+          <div className="space-y-2">
+            {sortedGenres.map(([genre, count], index) => {
+              const percentage = totalCount > 0 ? (count / totalCount) * 100 : 0;
+              return (
+                <div key={genre} className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-4 h-4 rounded ${colors[index % colors.length]}`} />
+                    <span className="font-medium">{genre}</span>
+                  </div>
+                  <span className="text-muted-foreground">
+                    {count} ({percentage.toFixed(1)}%)
+                  </span>
                 </div>
-                <div className="w-full h-2 bg-secondary rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-primary transition-all duration-300"
-                    style={{ width: `${(count / maxCount) * 100}%` }}
-                  />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </CardContent>
       </Card>
@@ -347,28 +390,6 @@ export function StatisticsView({ entries }: StatisticsViewProps) {
             </div>
           </CardContent>
         </Card>
-        
-        {stats.mostActiveDay && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Aktivster Tag</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Datum:</span>
-                <span className="font-semibold">{stats.mostActiveDay.date}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Aktivität:</span>
-                <span className="font-semibold">
-                  {stats.mostActiveDay.type === 'pages'
-                    ? `${stats.mostActiveDay.count} Seiten`
-                    : formatTime(stats.mostActiveDay.count)}
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-        )}
       </div>
       
       {/* Genre-Statistiken */}
