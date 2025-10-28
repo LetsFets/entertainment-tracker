@@ -713,9 +713,9 @@ const resetForm = () => {
                             
                             <div className="space-y-2">
                               <Label>Datum (optional)</Label>
-                              <div className="grid grid-cols-3 gap-2">
+                              <div className="flex gap-2">
                                 {/* Jahr */}
-                                <div>
+                                <div className="w-24">
                                   <Input
                                     type="number"
                                     value={session.year || ""}
@@ -733,18 +733,17 @@ const resetForm = () => {
                                     max={new Date().getFullYear()}
                                   />
                                 </div>
-                                
-                                {/* Monat - Dropdown */}
-                                <div>
-                                  <select
-                                    value={session.month || ""}
-                                    onChange={(e) => {
-                                      const month = e.target.value ? parseInt(e.target.value) : undefined;
+
+                                { /* Monat */}
+                                <div className="flex gap-2">
+                                  <Select
+                                    value={session.month ? String(session.month) : ""}
+                                    onValueChange={(value) => {
+                                      const month = value ? parseInt(value) : undefined;
                                       updateReadingSession(session.id, "month", month);
                                       if (!month) {
                                         updateReadingSession(session.id, "day", undefined);
                                       } else if (session.day && session.year) {
-                                        // Korrigiere Tag falls er jetzt ungültig ist
                                         const newMaxDay = getDaysInMonth(session.year, month);
                                         if (session.day > newMaxDay) {
                                           updateReadingSession(session.id, "day", newMaxDay);
@@ -752,26 +751,29 @@ const resetForm = () => {
                                       }
                                     }}
                                     disabled={pending || !session.year}
-                                    className="w-full h-10 px-3 py-2 border rounded-md"
                                   >
-                                    <option value="">Monat</option>
-                                    <option value="1">Januar</option>
-                                    <option value="2">Februar</option>
-                                    <option value="3">März</option>
-                                    <option value="4">April</option>
-                                    <option value="5">Mai</option>
-                                    <option value="6">Juni</option>
-                                    <option value="7">Juli</option>
-                                    <option value="8">August</option>
-                                    <option value="9">September</option>
-                                    <option value="10">Oktober</option>
-                                    <option value="11">November</option>
-                                    <option value="12">Dezember</option>
-                                  </select>
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Monat" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="1">Januar</SelectItem>
+                                      <SelectItem value="2">Februar</SelectItem>
+                                      <SelectItem value="3">März</SelectItem>
+                                      <SelectItem value="4">April</SelectItem>
+                                      <SelectItem value="5">Mai</SelectItem>
+                                      <SelectItem value="6">Juni</SelectItem>
+                                      <SelectItem value="7">Juli</SelectItem>
+                                      <SelectItem value="8">August</SelectItem>
+                                      <SelectItem value="9">September</SelectItem>
+                                      <SelectItem value="10">Oktober</SelectItem>
+                                      <SelectItem value="11">November</SelectItem>
+                                      <SelectItem value="12">Dezember</SelectItem>
+                                    </SelectContent>
+                                  </Select>
                                 </div>
                                 
                                 {/* Tag */}
-                                <div>
+                                <div className="w-20">
                                   <Input
                                     type="number"
                                     value={session.day || ""}
