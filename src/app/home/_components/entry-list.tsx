@@ -395,16 +395,32 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
                       </div>
                     </div>
                   )}
-
                   
-                  <div className="space-y-2 text-sm">
+                {entry.category === "series" && (() => {
+                  const staffelnData = entry.categorySpecificFields["Staffeln"];
+                  if (staffelnData) {
+                    try {
+                      const seasons = typeof staffelnData === 'string' ? JSON.parse(staffelnData) : staffelnData;
+                      if (Array.isArray(seasons) && seasons.length > 0) {
+                        return (
+                          <p className="text-sm text-muted-foreground mb-2">
+                            <strong>Anzahl Staffeln:</strong> {seasons.length}
+                          </p>
+                        );
+                      }
+                    } catch {}
+                  }
+                  return null;
+                })()}
+
+                <div className="space-y-2 text-sm">
                   {Object.entries(entry.categorySpecificFields)
                     .filter(([key, value]) => {
                       // Filtere leere Werte raus
                       if (!value || (Array.isArray(value) && value.length === 0)) return false;
                       
                       const displayName = formatFieldName(key);
-                      const purelyProgressFields = ["Folgen gesamt", "Spielzeit"];
+                      const purelyProgressFields = ["Folgen gesamt", "Spielzeit", "Staffeln"]; // ← "Staffeln" hinzufügen
                       if (purelyProgressFields.includes(displayName)) return false;
                       
                       return true;
@@ -418,7 +434,7 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
                           if (Array.isArray(seasonsData) && seasonsData.length > 0) {
                             return (
                               <p key={key} className="text-muted-foreground">
-                                Anzahl Staffeln: {seasonsData.length}
+                                <strong>Anzahl Staffeln: {seasonsData.length}</strong>
                               </p>
                             );
                           }

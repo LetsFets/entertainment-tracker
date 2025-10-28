@@ -100,7 +100,7 @@ export function NewEntryForm({
   const [seasons, setSeasons] = useState<{ seasonNumber: number; episodes: number }[]>([]);
   const [readingSessions, setReadingSessions] = useState<ReadingSessionWithId[]>([]);
   const [gamingSessions, setGamingSessions] = useState<GamingSessionWithId[]>([]);
-  const [completionCount, setCompletionCount] = useState(1);
+  const [completionCount, setCompletionCount] = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1257,7 +1257,18 @@ const resetForm = () => {
                 </>
               )}
             </Button>
-            <Button type="button" variant="outline" onClick={handleCancel} disabled={pending}>
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={() => {
+                if (!isEditing) {
+                  // Neuer Eintrag → Reset
+                  resetForm();
+                }
+                onCancelEdit?.();
+                setIsExpanded(false);
+              }}
+            >
               Abbrechen
             </Button>
           </div>

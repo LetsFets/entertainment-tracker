@@ -32,37 +32,52 @@ export function StatisticsView({ entries }: StatisticsViewProps) {
     const currentEpisode = parseInt(entry.categorySpecificFields["Aktuelle Folge"] as string || "0");
     const completionCount = Number(entry.completionCount) || 0;
 
-    if (staffelnData && typeof staffelnData === "string" && avgLength > 0) {
-      try {
-        const seasons = JSON.parse(staffelnData);
-        const totalEpisodes = seasons.reduce((sum: number, s: any) => sum + s.episodes, 0);
-        
-        let watchedEpisodes = 0;
-        for (let i = 0; i < currentSeason - 1 && i < seasons.length; i++) {
-          watchedEpisodes += seasons[i].episodes;
-        }
-        watchedEpisodes += currentEpisode;
-        
-        const totalTime = totalEpisodes * avgLength;
-        const watchedTime = watchedEpisodes * avgLength;
-        
-        // Frühere Durchgänge
-        if (completionCount > 0) {
-          seriesStats.completedMinutes += totalTime * completionCount;
-          seriesStats.totalMinutes += totalTime * completionCount;
-        }
-        
-        // Aktueller Durchgang
-        if (!entry.completed && !entry.abandoned) {
-          seriesStats.inProgressMinutes += watchedTime;
-          seriesStats.totalMinutes += watchedTime;
-        } else if (entry.completed) {
-          seriesStats.completedMinutes += totalTime;
-          seriesStats.totalMinutes += totalTime;
-        }
-      } catch (e) {
-        console.error("Parse error", e);
+    if (!staffelnData || avgLength <= 0) return;
+
+    try {
+      // Parse Staffeln (String ODER Array)
+      let seasons: { seasonNumber: number; episodes: number }[] = [];
+
+      if (typeof staffelnData === "string") {
+        seasons = JSON.parse(staffelnData);
+      } else if (Array.isArray(staffelnData)) {
+        seasons = staffelnData as unknown as { seasonNumber: number; episodes: number }[];
+      } else {
+        return; // Ungültiges Format
       }
+
+      const totalEpisodes = seasons.reduce((sum, s) => sum + (s.episodes || 0), 0);
+      
+      // Berechne geschaute Folgen
+      let watchedEpisodes = 0;
+      for (const season of seasons) {
+        if (season.seasonNumber < currentSeason) {
+          watchedEpisodes += season.episodes;
+        } else if (season.seasonNumber === currentSeason) {
+          watchedEpisodes += currentEpisode;
+        }
+      }
+      
+      const totalTime = totalEpisodes * avgLength;
+      const watchedTime = watchedEpisodes * avgLength;
+      
+      // Frühere Durchgänge
+      if (completionCount > 0) {
+        seriesStats.completedMinutes += totalTime * completionCount;
+        seriesStats.totalMinutes += totalTime * completionCount;
+      }
+      
+      // Aktueller Durchgang
+      if (entry.completed) {
+        seriesStats.completedMinutes += totalTime;
+        seriesStats.totalMinutes += totalTime;
+      } else if (!entry.abandoned && watchedEpisodes > 0) {
+        // Laufend: Zähle nur geschaute Folgen
+        seriesStats.inProgressMinutes += watchedTime;
+        seriesStats.totalMinutes += watchedTime;
+      }
+    } catch (e) {
+      console.error("Series parse error for", entry.title, e);
     }
   });
 
