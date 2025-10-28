@@ -11,6 +11,7 @@ import { signOut } from "@/lib/auth-client";
 import { getAllEntries } from "@/actions/get-entries";
 import { deleteEntry } from "@/actions/delete-entry";
 import type { Category, MediaEntry } from "@/lib/types";
+import { ThemeToggle } from "@/components/ui/theme-toggle"
 
 const categories: { value: Category; label: string }[] = [
   { value: "books", label: "Bücher" },
@@ -155,6 +156,10 @@ export default function HomePage() {
           <IconLogout className="h-4 w-4 mr-2" />
           Logout
         </Button>
+      </div>
+
+      <div className="fixed top-4 right-4 z-50">
+        <ThemeToggle />
       </div>
 
       <Tabs value={activeCategory} onValueChange={(v) => {
