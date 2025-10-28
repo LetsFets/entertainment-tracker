@@ -54,32 +54,22 @@ export async function getAllEntries(): Promise<{
 }
 
 function parseFields(row: any): Record<string, string | string[]> {
-  console.log('[parseFields] RAW row:', row);  // Debug
-  
   const fields: Record<string, string | string[]> = {};
   const systemFields = ['id', 'title', 'image', 'completed', 'abandoned', 'completion_count', 'reading_sessions', 'gaming_sessions', 'created_at'];
   
   const fieldNameMapping: Record<string, string> = {
-    // Bücher
     'autor': 'Autor',
     'seitenanzahl': 'Seitenanzahl',
     'genre': 'Genre',
     'reihe': 'Reihe',
-    
-    // Serien
     'staffeln': 'Staffeln',
     'aktuelle staffel': 'Aktuelle Staffel',
     'aktuelle folge': 'Aktuelle Folge',
-    
-    // Filme
+    'durchschnittliche folgenlänge': 'Durchschnittliche Folgenlänge',
     'laufzeit': 'Laufzeit',
     'aktuelle minute': 'Aktuelle Minute',
-    
-    // Videospiele
     'spielzeit': 'Spielzeit',
     'entwickler': 'Entwickler',
-    
-    // Podcasts
     'host': 'Host',
     'folgen gesamt': 'Folgen gesamt',
     'minute': 'Minute',
@@ -87,24 +77,26 @@ function parseFields(row: any): Record<string, string | string[]> {
   };
   
   for (const [key, value] of Object.entries(row)) {
-    // WICHTIG: Konvertiere einmal und konsistent verwenden!
     const normalizedKey = key.toLowerCase().replace(/_/g, ' ');
     
     if (!systemFields.includes(key.toLowerCase()) && value !== null && value !== undefined) {
-      // Verwende NUR den normalisierten Key für Lookup
       const displayName = fieldNameMapping[normalizedKey] || key;
-      
-      console.log(`[parseFields] key="${key}" → normalized="${normalizedKey}" → displayName="${displayName}"`);
       
       try {
         const parsed = JSON.parse(value as string);
-        fields[displayName] = Array.isArray(parsed) ? parsed : (value as string);
+        
+        // WICHTIG: Behalte Arrays als Arrays!
+        if (Array.isArray(parsed)) {
+          fields[displayName] = parsed;
+        } else {
+          fields[displayName] = value as string;
+        }
       } catch {
+        // Wenn JSON.parse fehlschlägt, normaler String
         fields[displayName] = value as string;
       }
     }
   }
   
-  console.log('[parseFields] RESULT fields:', fields);
   return fields;
 }

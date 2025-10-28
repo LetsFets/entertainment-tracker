@@ -37,14 +37,29 @@ export function StatisticsView({ entries }: StatisticsViewProps) {
     try {
       // Parse Staffeln (String ODER Array)
       let seasons: { seasonNumber: number; episodes: number }[] = [];
-
+      
       if (typeof staffelnData === "string") {
-        seasons = JSON.parse(staffelnData);
+        try {
+          seasons = JSON.parse(staffelnData);
+        } catch {
+          return;
+        }
       } else if (Array.isArray(staffelnData)) {
-        seasons = staffelnData as unknown as { seasonNumber: number; episodes: number }[];
+        // Normalize array format
+        seasons = (staffelnData as any[]).map((item, idx) => {
+          if (typeof item === 'object' && item !== null && 'seasonNumber' in item && 'episodes' in item) {
+            return {
+              seasonNumber: Number(item.seasonNumber) || idx + 1,
+              episodes: Number(item.episodes) || 0
+            };
+          }
+          return { seasonNumber: idx + 1, episodes: 0 };
+        });
       } else {
-        return; // Ungültiges Format
+        return;
       }
+
+      if (seasons.length === 0) return;
 
       const totalEpisodes = seasons.reduce((sum, s) => sum + (s.episodes || 0), 0);
       
@@ -329,7 +344,7 @@ export function StatisticsView({ entries }: StatisticsViewProps) {
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Filme</CardTitle>
@@ -342,6 +357,10 @@ export function StatisticsView({ entries }: StatisticsViewProps) {
             <div className="flex justify-between">
               <span className="text-muted-foreground">Abgeschlossen:</span>
               <span className="font-semibold text-green-600">{formatTime(stats.movieStats.completedMinutes)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Laufend:</span>
+              <span className="font-semibold text-blue-600">{formatTime(stats.movieStats.inProgressMinutes)}</span>
             </div>
           </CardContent>
         </Card>

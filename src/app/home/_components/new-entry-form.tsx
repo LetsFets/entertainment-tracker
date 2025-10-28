@@ -412,6 +412,15 @@ export function NewEntryForm({
 
     console.log('[handleSubmit] cleanedFields:', cleanedFields);
 
+    // AUTO-INCREMENT completionCount beim Abschließen
+    const wasCompleted = isEditing && editingEntry?.completed;
+    const isNowCompleted = completed;
+    const shouldIncrementCount = !wasCompleted && isNowCompleted;
+
+    const finalCompletionCount = shouldIncrementCount 
+      ? (isEditing ? (editingEntry?.completionCount || 0) + 1 : 1)
+      : (completionCount >= 0 ? completionCount : 0);
+
     const entryData = {
       id: isEditing ? editingEntry!.id : undefined,
       category,
@@ -427,7 +436,7 @@ export function NewEntryForm({
         : undefined,
       completed,
       abandoned,
-      completionCount: completionCount >= 0 ? completionCount : 0,
+      completionCount: finalCompletionCount, // ← Verwende die berechnete Zahl
     };
 
     console.log('[handleSubmit] entryData:', entryData);
