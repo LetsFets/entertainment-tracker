@@ -24,4 +24,8 @@ export const auth = betterAuth({
     enabled: false, // Please keep this off for study stuff... You should also turn this when deploying to prod
     debug: false,
   },
+  session: {
+    expiresIn: 60 * 30, // 30 Minuten Inaktivität
+    updateAge: 60 * 5, // Verlängere Session alle 5 Minuten wenn aktiv
+  },
 });

@@ -7,42 +7,21 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { IconPlus, IconX, IconPhoto, IconDeviceFloppy } from "@tabler/icons-react";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Loader2Icon } from "lucide-react";
 import Image from "next/image";
-import {EntryData} from "../../../lib/types";
-import { createEntry } from "../../../actions/create-entry";
+import { createEntry } from "@/actions/create-entry";
+import { updateEntry } from "@/actions/update-entry";
+import type { EntryData } from "@/lib/types";
+import type { Category, MediaEntry, ReadingSession, GamingSession } from "@/lib/types";
 
-export type Category = "books" | "series" | "movies" | "videogames" | "podcasts";
-
-export interface ReadingSession {
+// Lokale Interfaces NUR für React State (MIT id für Rendering)
+interface ReadingSessionWithId extends ReadingSession {
   id: string;
-  pages: number;
-  year?: number;
-  month?: number;
-  day?: number;
 }
 
-export interface GamingSession {
+interface GamingSessionWithId extends GamingSession {
   id: string;
-  duration: number; // in Stunden
-  year?: number;
-  month?: number;
-  day?: number;
-}
-
-export interface MediaEntry {
-  id: string;
-  category: Category;
-  title: string;
-  image?: string;
-  categorySpecificFields: Record<string, string | string[]>;
-  customFields: { name: string; value: string }[];
-  readingSessions?: ReadingSession[];
-  gamingSessions?: GamingSession[];
-  completed: boolean;
-  abandoned: boolean;
-  createdAt: Date;
 }
 
 interface CustomField {
@@ -68,11 +47,12 @@ const categoryFields: Record<Category, { name: string; multi?: boolean; type?: F
     { name: "Durchschnittliche Folgenlänge", type: "number" },
     { name: "Genre", multi: true, type: "text" },
     { name: "Reihe", type: "text" },
-  ],
+],
   movies: [
     { name: "Laufzeit", type: "number" },
-    { name: "Reihe", type: "text" },
+    { name: "Aktuelle Minute", type: "number" }, 
     { name: "Genre", multi: true, type: "text" },
+    { name: "Reihe", type: "text" },
   ],
   videogames: [
     { name: "Spielzeit", type: "number" },
@@ -85,6 +65,7 @@ const categoryFields: Record<Category, { name: string; multi?: boolean; type?: F
     { name: "Host", multi: true, type: "text" },
     { name: "Folgen gesamt", type: "number" },
     { name: "Aktuelle Folge", type: "number" },
+    { name: "Minute", type: "number" },
     { name: "Durchschn. Länge", type: "number" },
     { name: "Genre", multi: true, type: "text" },
     { name: "Reihe", type: "text" },
@@ -97,74 +78,140 @@ interface NewEntryFormProps {
   onEntryUpdated: (entry: MediaEntry) => void;
   editingEntry?: MediaEntry;
   onCancelEdit?: () => void;
+  existingTitles?: string[];
 }
 
-// Die Komponente: NewEntryForm
-export function NewEntryForm({ 
-  category, 
-  onEntryCreated, 
-  onEntryUpdated,
-  editingEntry,
-  onCancelEdit 
+export function NewEntryForm({
+  category,
+  onEntryCreated,
+  onEntryUpdated,
+  editingEntry,
+  onCancelEdit,
+  existingTitles = []
 }: NewEntryFormProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [title, setTitle] = useState("");
-  const [image, setImage] = useState<string | undefined>(undefined);
-  const [categorySpecificFields, setCategorySpecificFields] = useState<Record<string, string | string[]>>({});
-  const [customFields, setCustomFields] = useState<CustomField[]>([]);
-  const [completed, setCompleted] = useState(false);
-  const [abandoned, setAbandoned] = useState(false);
-  const [pending, setPending] = useState(false); // Wird für den Ladezustand verwendet
-  const [seasons, setSeasons] = useState<{ seasonNumber: number; episodes: number }[]>([]);
-  const [readingSessions, setReadingSessions] = useState<ReadingSession[]>([]);
-  const [gamingSessions, setGamingSessions] = useState<GamingSession[]>([]);
-  
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [title, setTitle] = useState("");
+  const [image, setImage] = useState<string | undefined>(undefined);
+  const [categorySpecificFields, setCategorySpecificFields] = useState<Record<string, string | string[]>>({});
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const [completed, setCompleted] = useState(false);
+  const [abandoned, setAbandoned] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [seasons, setSeasons] = useState<{ seasonNumber: number; episodes: number }[]>([]);
+  const [readingSessions, setReadingSessions] = useState<ReadingSessionWithId[]>([]);
+  const [gamingSessions, setGamingSessions] = useState<GamingSessionWithId[]>([]);
+  const [completionCount, setCompletionCount] = useState(0);
 
-  // Annahme: categoryFields ist im Scope definiert
-  const availableFields = categoryFields[category]; 
-  const isEditing = !!editingEntry;
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (editingEntry) {
-      setIsExpanded(true);
-      setTitle(editingEntry.title);
-      setImage(editingEntry.image);
-      setCategorySpecificFields(editingEntry.categorySpecificFields);
-      setCustomFields(
-        editingEntry.customFields.map(f => ({ ...f, id: crypto.randomUUID() }))
-      );
-      setCompleted(editingEntry.completed);
-      setAbandoned(editingEntry.abandoned);
-      
-      if (editingEntry.readingSessions) {
-        setReadingSessions(editingEntry.readingSessions);
-      }
-      
-      if (editingEntry.gamingSessions) {
-        setGamingSessions(editingEntry.gamingSessions);
-      }
-      
-      const staffelnData = editingEntry.categorySpecificFields["Staffeln"];
-      if (typeof staffelnData === "string") {
-        try {
-          const parsed = JSON.parse(staffelnData);
-          if (Array.isArray(parsed)) {
-            setSeasons(parsed);
-          }
-        } catch (e) {
-          console.error("Fehler beim Parsen der Staffel-Daten", e);
-        }
-      }
-    }
-  }, [editingEntry]);
+  const availableFields = categoryFields[category];
+  const isEditing = !!editingEntry;
+
+  const titleExists = existingTitles.some(
+    t => t.toLowerCase().trim() === title.toLowerCase().trim()
+  );
+
+  // Helper-Funktion: Tage im Monat berechnen
+  const getDaysInMonth = (year: number, month: number): number => {
+    if (month === 2) {
+      // Schaltjahr-Prüfung
+      return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0 ? 29 : 28;
+    }
+    return [4, 6, 9, 11].includes(month) ? 30 : 31;
+  };
+
+  useEffect(() => {
+    if (editingEntry) {
+      setIsExpanded(true);
+      setTitle(editingEntry.title);
+      setImage(editingEntry.image);
+      setCategorySpecificFields(editingEntry.categorySpecificFields);
+      setCustomFields(
+        editingEntry.customFields.map((f) => ({ ...f, id: crypto.randomUUID() }))
+      );
+      setCompleted(editingEntry.completed);
+      setAbandoned(editingEntry.abandoned);
+      setCompletionCount(editingEntry.completionCount ?? 1);
+
+      if (editingEntry.readingSessions) {
+        setReadingSessions(
+          editingEntry.readingSessions.map((s) => ({ ...s, id: crypto.randomUUID() }))
+        );
+      }
+      
+      if (editingEntry.gamingSessions) {
+        setGamingSessions(
+          editingEntry.gamingSessions.map((s) => ({...s, id: crypto.randomUUID() }))
+        );
+      }
+      
+      // STAFFELN LADEN - Case-insensitive UND flexible Typ-Behandlung!
+      const staffelnKey = Object.keys(editingEntry.categorySpecificFields).find(
+        k => k.toLowerCase() === 'staffeln'
+      );
+
+      const normalizeSeasons = (input: any): { seasonNumber: number; episodes: number }[] => {
+        if (!input) return [];
+        if (Array.isArray(input)) {
+          return input.map((item, idx) => {
+            // Already an object with the expected shape
+            if (item && typeof item === 'object' && 'seasonNumber' in item && 'episodes' in item) {
+              return {
+                seasonNumber: Number((item as any).seasonNumber) || idx + 1,
+                episodes: Number((item as any).episodes) || 0,
+              };
+            }
+            // If the item is a JSON string, try to parse it
+            if (typeof item === 'string') {
+              try {
+                const parsed = JSON.parse(item);
+                if (parsed && typeof parsed === 'object' && 'seasonNumber' in parsed) {
+                  return {
+                    seasonNumber: Number(parsed.seasonNumber) || idx + 1,
+                    episodes: Number(parsed.episodes) || 0,
+                  };
+                }
+              } catch {
+                // Not JSON — treat numeric string as episodes, otherwise fallback
+                const num = Number(item);
+                return { seasonNumber: idx + 1, episodes: isNaN(num) ? 0 : num };
+              }
+            }
+            // Fallback: create a sensible default
+            return { seasonNumber: idx + 1, episodes: 0 };
+          });
+        }
+        if (typeof input === 'string') {
+          try {
+            const parsed = JSON.parse(input);
+            if (Array.isArray(parsed)) return normalizeSeasons(parsed);
+          } catch {
+            // not JSON, ignore
+          }
+        }
+        return [];
+      };
+
+      if (staffelnKey) {
+        const staffelnData = editingEntry.categorySpecificFields[staffelnKey];
+
+        const normalized = normalizeSeasons(staffelnData);
+        if (normalized.length > 0) {
+          console.log('[useEffect] Staffeln normalisiert:', normalized);
+          setSeasons(normalized);
+        }
+      }
+    } else {
+      setSeasons([]);
+    }
+  }, [editingEntry]);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     if (file.size > 5 * 1024 * 1024) {
-      alert("Bild ist zu groß! Maximal 5MB erlaubt.");
+      alert("Bild ist zu groß! Maximal 1MB erlaubt.");
       return;
     }
 
@@ -214,22 +261,55 @@ export function NewEntryForm({
       .map((s, idx) => ({ ...s, seasonNumber: idx + 1 })));
   };
 
-  const addReadingSession = () => {
-    setReadingSessions([
-      ...readingSessions,
-      { id: crypto.randomUUID(), pages: 0 }
-    ]);
-  };
+  const addReadingSession = () => {
+    // Validierung: Prüfe ob Seitenanzahl existiert
+    const totalPages = parseInt(categorySpecificFields["Seitenanzahl"] as string || "0");
+    
+    if (!totalPages || totalPages <= 0) {
+      alert("Bitte zuerst die Seitenanzahl des Buches eingeben!");
+      return;
+    }
+    
+    // Berechne bereits gelesene Seiten
+    const currentPagesRead = readingSessions.reduce((sum, s) => sum + s.pages, 0);
+    const remainingPages = totalPages - currentPagesRead;
+    
+    if (remainingPages <= 0) {
+      alert(`Du hast bereits alle ${totalPages} Seiten gelesen!`);
+      return;
+    }
+    
+    setReadingSessions([
+      ...readingSessions,
+      { id: crypto.randomUUID(), pages: 0 }
+    ]);
+  };
 
-  const updateReadingSession = (id: string, field: keyof ReadingSession, value: number | undefined) => {
-    setReadingSessions(readingSessions.map(s => 
-      s.id === id ? { ...s, [field]: value } : s
-    ));
-  };
+  const updateReadingSession = (id: string, field: keyof ReadingSession, value: number | undefined) => {
+    if (field === "pages" && value !== undefined) {
+      const totalPages = parseInt(categorySpecificFields["Seitenanzahl"] as string || "0");
+      
+      // Berechne Seiten der anderen Sessions
+      const otherSessionsPages = readingSessions
+        .filter(s => s.id !== id)
+        .reduce((sum, s) => sum + s.pages, 0);
+      
+      const maxAllowedPages = totalPages - otherSessionsPages;
+      
+      if (value > maxAllowedPages) {
+        alert(`Maximal ${maxAllowedPages} Seiten möglich!\n(Gesamt: ${totalPages}, bereits in anderen Sessions: ${otherSessionsPages})`);
+        return; // Verhindere die Änderung
+      }
+    }
+    
+    setReadingSessions(readingSessions.map(s => 
+      s.id === id ? { ...s, [field]: value } : s
+    ));
+  };
 
-  const removeReadingSession = (id: string) => {
-    setReadingSessions(readingSessions.filter(s => s.id !== id));
-  };
+  const removeReadingSession = useCallback((id: string) => {
+    setReadingSessions(prev => prev.filter(s => s.id !== id));
+  }, []);
 
   const addGamingSession = () => {
     setGamingSessions([
@@ -244,9 +324,9 @@ export function NewEntryForm({
     ));
   };
 
-  const removeGamingSession = (id: string) => {
-    setGamingSessions(gamingSessions.filter(s => s.id !== id));
-  };
+  const removeGamingSession = useCallback((id: string) => {
+    setGamingSessions(prev => prev.filter(s => s.id !== id));
+  }, []);
 
   const addMultiValue = (fieldName: string) => {
     const current = categorySpecificFields[fieldName] as string[] || [];
@@ -292,107 +372,123 @@ export function NewEntryForm({
     return /^[a-zA-ZäöüÄÖÜß0-9\s\-.,]*$/.test(value);
   };
 
-// ---------------------------------------------------------------------------------
-// START: HIER IST DIE WESENTLICHE ÄNDERUNG (handleSubmit)
-// ---------------------------------------------------------------------------------
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPending(true);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setPending(true); // Startet den Ladezustand
+    // VALIDIERUNG: Prüfe ob mehr Seiten gelesen als vorhanden
+    if (category === "books" && readingSessions.length > 0) {
+      const totalPages = parseInt(categorySpecificFields["Seitenanzahl"] as string || "0");
+      const pagesRead = readingSessions.reduce((sum, s) => sum + s.pages, 0);
+      
+      if (pagesRead > totalPages) {
+        alert(`Fehler: Du hast ${pagesRead} Seiten eingetragen, aber das Buch hat nur ${totalPages} Seiten!`);
+        setPending(false);
+        return;
+      }
+    }
 
-    // 1. Datenbereinigung und Vorbereitung
-    const cleanedFields: Record<string, string | string[]> = {};
-    Object.entries(categorySpecificFields).forEach(([key, value]) => {
-      if (Array.isArray(value)) {
-        const filtered = value.filter(v => v.trim() !== "");
-        if (filtered.length > 0) {
-          cleanedFields[key] = filtered;
-        }
-      } else if (value && value.trim() !== "") {
-        cleanedFields[key] = value;
-      }
-    });
+    const cleanedFields: Record<string, string | string[]> = {};
+    Object.entries(categorySpecificFields).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        const filtered = value.filter(v => {
+          if (typeof v === 'string') {
+            return v.trim() !== '';
+          }
+          return v !== null && v !== undefined;
+        });
+        if (filtered.length > 0) {
+          cleanedFields[key] = filtered;
+        }
+      } else if (value && typeof value === 'string' && value.trim() !== "") {
+        cleanedFields[key] = value;
+      }
+    });
 
-    // Staffel-Daten serialisieren
-    if (category === "series" && seasons.length > 0) {
-      cleanedFields["Staffeln"] = JSON.stringify(seasons);
-    }
+    // FÜR SERIEN: Staffeln hinzufügen (überschreibt alte Staffeln)
+    if (category === "series" && seasons.length > 0) {
+      cleanedFields["Staffeln"] = JSON.stringify(seasons);
+    }
 
-    // Erstellung des EntryData-Objekts für die Server Action
-    const entryData: EntryData & { id?: string } = {
-      category,
-      title,
-      image,
-      categorySpecificFields: cleanedFields,
-      customFields: customFields.filter(f => f.name && f.value).map(({ id, name, value }) => ({ id, name, value })),
-      readingSessions: category === "books" && readingSessions.length > 0 ? readingSessions : undefined,
-      gamingSessions: category === "videogames" && gamingSessions.length > 0 ? gamingSessions : undefined,
-      completed,
-      abandoned,
-      // Füge die ID nur hinzu, wenn es sich um ein Update handelt
+    console.log('[handleSubmit] cleanedFields:', cleanedFields);
+
+    // AUTO-INCREMENT completionCount beim Abschließen
+    const wasCompleted = isEditing && editingEntry?.completed;
+    const isNowCompleted = completed;
+    const shouldIncrementCount = !wasCompleted && isNowCompleted;
+
+    const finalCompletionCount = shouldIncrementCount 
+      ? (isEditing ? (editingEntry?.completionCount || 0) + 1 : 1)
+      : (completionCount >= 0 ? completionCount : 0);
+
+    const entryData = {
       id: isEditing ? editingEntry!.id : undefined,
-    };
+      category,
+      title,
+      image,
+      categorySpecificFields: cleanedFields,
+      customFields: customFields.filter(f => f.name && f.value).map(({ name, value }) => ({ name, value })),
+      readingSessions: category === "books" && readingSessions.length > 0 
+        ? readingSessions.map(({ id, ...rest }) => rest) 
+        : undefined,
+      gamingSessions: category === "videogames" && gamingSessions.length > 0 
+        ? gamingSessions.map(({ id, ...rest }) => rest)
+        : undefined,
+      completed,
+      abandoned,
+      completionCount: finalCompletionCount, // ← Verwende die berechnete Zahl
+    };
 
-    try {
-        // 2. DATENBANK-AKTION: Aufruf der Server Action
-        const result = await createEntry(entryData);
+    console.log('[handleSubmit] entryData:', entryData);
 
-        if (result.success) {
-            // Die endgültige ID (bestehend oder neu vom Server)
-            const finalId = result.id || entryData.id!;
-            
-            // Erstelle das vollständige Objekt, das an die Callback-Props übergeben wird
-            const finalEntry: MediaEntry = {
-                ...editingEntry, // Fügt existingEntry-Felder hinzu (z.B. createdAt)
-                ...entryData,
-                id: finalId,
-                // Füge createdAt nur hinzu, wenn es nicht vom existingEntry kommt (neuer Eintrag)
-                createdAt: editingEntry?.createdAt || new Date(), 
-            };
-            
-            if (isEditing) {
-                onEntryUpdated(finalEntry); 
-            } else {
-                onEntryCreated(finalEntry); 
-            }
-            
-            resetForm(); // Formular zurücksetzen
+    try {
+      const result = isEditing 
+        ? await updateEntry(entryData as EntryData & { id: string })
+        : await createEntry(entryData);
+
+      if (result.success) {
+        const finalEntry: MediaEntry = {
+          ...entryData,
+          id: result.id!,
+          createdAt: isEditing ? editingEntry!.createdAt : Date.now(),
+        };
+        
+        if (isEditing && editingEntry) {
+          onEntryUpdated(finalEntry);
         } else {
-            // Zeigt Fehler der Server Action an (z.B. Validierungsfehler)
-            alert(`Fehler beim Speichern: ${result.error}`);
+          onEntryCreated(finalEntry);
         }
         
-    } catch (error) {
-      console.error("Kritischer Fehler beim Speichern:", error);
-      alert("Ein kritischer Fehler auf der Server-Seite ist aufgetreten.");
-    } finally {
-      setPending(false); // Ladezustand beenden
-    }
-  };
+        resetForm();
+      } else {
+        alert(`Fehler: ${result.error}`);
+      }
+    } catch (error) {
+      console.error("Fehler:", error);
+      alert("Ein Fehler ist aufgetreten.");
+    } finally {
+      setPending(false);
+    }
+  };
 
-// ---------------------------------------------------------------------------------
-// ENDE: ÄNDERUNG (handleSubmit)
-// ---------------------------------------------------------------------------------
-
-
-  const resetForm = () => {
-    setTitle("");
-    setImage(undefined);
-    setCategorySpecificFields({});
-    setCustomFields([]);
-    setSeasons([]);
-    setReadingSessions([]);
-    setGamingSessions([]);
-    setCompleted(false);
-    setAbandoned(false);
-    setIsExpanded(false);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-    if (onCancelEdit) {
-      onCancelEdit();
-    }
-  };
+const resetForm = () => {
+    setTitle("");
+    setImage(undefined);
+    setCategorySpecificFields({});
+    setCustomFields([]);
+    setSeasons([]);
+    setReadingSessions([]);
+    setGamingSessions([]);
+    setCompleted(false);
+    setAbandoned(false);
+    setIsExpanded(false);
+    if (!editingEntry) { // Nur im Erstellmodus einklappen
+        setIsExpanded(false);
+    }
+    if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+    }
+};
 
   const handleCancel = () => {
     resetForm();
@@ -430,7 +526,13 @@ export function NewEntryForm({
               placeholder="Titel eingeben..."
               required
               disabled={pending}
+              className={titleExists ? "border-destructive" : ""}
             />
+            {titleExists && (
+              <p className="text-sm text-destructive">
+                ⚠️ Ein Eintrag mit diesem Titel existiert bereits in dieser Kategorie!
+              </p>
+            )}
           </div>
 
           {/* Bild Upload */}
@@ -475,7 +577,7 @@ export function NewEntryForm({
                   <IconPhoto className="mr-2 h-4 w-4" />
                   Bild hochladen
                 </Button>
-                <span className="text-xs text-muted-foreground">Max. 5MB</span>
+                <span className="text-xs text-muted-foreground">Max. 1MB</span>
               </div>
             )}
           </div>
@@ -549,8 +651,26 @@ export function NewEntryForm({
             {/* Lese-Sessions für Bücher */}
             {category === "books" && (
               <div className="space-y-2">
-                <Label>Lese-Sessions</Label>
+                <div className="space-y-2">
+                  <Label>Seitenanzahl {readingSessions.length > 0 && "*"}</Label>
+                  <Input
+                    type="number"
+                    value={categorySpecificFields["Seitenanzahl"] || ""}
+                    onChange={(e) => {
+                      setCategorySpecificFields({
+                        ...categorySpecificFields,
+                        ["Seitenanzahl"]: e.target.value,
+                      });
+                    }}
+                    placeholder="Gesamtanzahl der Seiten"
+                    disabled={pending}
+                    min="1"
+                    required={readingSessions.length > 0}
+                  />
+                </div>
                 
+                {/* Reading Sessions */}
+                <Label>Lese-Sessions</Label>
                 {readingSessions.length === 0 ? (
                   <Button
                     type="button"
@@ -565,95 +685,125 @@ export function NewEntryForm({
                   </Button>
                 ) : (
                   <div className="space-y-3">
-                    {readingSessions.map((session, index) => (
-                      <Card key={session.id} className="p-4">
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm font-medium">Session {index + 1}</span>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removeReadingSession(session.id)}
-                              disabled={pending}
-                            >
-                              <IconX className="h-4 w-4" />
-                            </Button>
-                          </div>
-                          
-                          <div className="space-y-2">
-                            <Label>Gelesene Seiten *</Label>
-                            <Input
-                              type="number"
-                              value={session.pages || ""}
-                              onChange={(e) =>
-                                updateReadingSession(session.id, "pages", parseInt(e.target.value) || 0)
-                              }
-                              placeholder="Anzahl Seiten"
-                              disabled={pending}
-                              min="0"
-                            />
-                          </div>
-                          
-                          <div className="space-y-2">
-                            <Label>Datum (optional)</Label>
-                            <div className="grid grid-cols-3 gap-2">
-                              <div>
-                                <Input
-                                  type="number"
-                                  value={session.year || ""}
-                                  onChange={(e) => {
-                                    const year = e.target.value ? parseInt(e.target.value) : undefined;
-                                    updateReadingSession(session.id, "year", year);
-                                    if (!year) {
-                                      updateReadingSession(session.id, "month", undefined);
-                                      updateReadingSession(session.id, "day", undefined);
-                                    }
-                                  }}
-                                  placeholder="Jahr"
-                                  disabled={pending}
-                                  min="1900"
-                                  max="2100"
-                                />
-                              </div>
-                              <div>
-                                <Input
-                                  type="number"
-                                  value={session.month || ""}
-                                  onChange={(e) => {
-                                    const month = e.target.value ? parseInt(e.target.value) : undefined;
-                                    updateReadingSession(session.id, "month", month);
-                                    if (!month) {
-                                      updateReadingSession(session.id, "day", undefined);
-                                    }
-                                  }}
-                                  placeholder="Monat"
-                                  disabled={pending || !session.year}
-                                  min="1"
-                                  max="12"
-                                />
-                              </div>
-                              <div>
-                                <Input
-                                  type="number"
-                                  value={session.day || ""}
-                                  onChange={(e) =>
-                                    updateReadingSession(session.id, "day", e.target.value ? parseInt(e.target.value) : undefined)
-                                  }
-                                  placeholder="Tag"
-                                  disabled={pending || !session.year || !session.month}
-                                  min="1"
-                                  max="31"
-                                />
-                              </div>
+                    {readingSessions.map((session, index) => {
+                      const maxDay = session.year && session.month 
+                        ? getDaysInMonth(session.year, session.month) 
+                        : 31;
+                      
+                      return (
+                        <Card key={session.id} className="p-4">
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-sm font-medium">Session {index + 1}</span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeReadingSession(session.id)}
+                                disabled={pending}
+                              >
+                                <IconX className="h-4 w-4" />
+                              </Button>
                             </div>
-                            <p className="text-xs text-muted-foreground">
-                              Jahr ist erforderlich für Monat/Tag
-                            </p>
+                            
+                            <div className="space-y-2">
+                              <Label>Gelesene Seiten *</Label>
+                              <Input
+                                type="number"
+                                value={session.pages || ""}
+                                onChange={(e) =>
+                                  updateReadingSession(session.id, "pages", parseInt(e.target.value) || 0)
+                                }
+                                placeholder="Anzahl Seiten"
+                                disabled={pending}
+                                min="0"
+                              />
+                            </div>
+                            
+                            <div className="space-y-2">
+                              <Label>Datum (optional)</Label>
+                              <div className="flex gap-2">
+                                {/* Jahr */}
+                                <div className="w-24">
+                                  <Input
+                                    type="number"
+                                    value={session.year || ""}
+                                    onChange={(e) => {
+                                      const year = e.target.value ? parseInt(e.target.value) : undefined;
+                                      updateReadingSession(session.id, "year", year);
+                                      if (!year) {
+                                        updateReadingSession(session.id, "month", undefined);
+                                        updateReadingSession(session.id, "day", undefined);
+                                      }
+                                    }}
+                                    placeholder="Jahr"
+                                    disabled={pending}
+                                    min="1900"
+                                    max={new Date().getFullYear()}
+                                  />
+                                </div>
+
+                                { /* Monat */}
+                                <div className="flex gap-2">
+                                  <Select
+                                    value={session.month ? String(session.month) : ""}
+                                    onValueChange={(value) => {
+                                      const month = value ? parseInt(value) : undefined;
+                                      updateReadingSession(session.id, "month", month);
+                                      if (!month) {
+                                        updateReadingSession(session.id, "day", undefined);
+                                      } else if (session.day && session.year) {
+                                        const newMaxDay = getDaysInMonth(session.year, month);
+                                        if (session.day > newMaxDay) {
+                                          updateReadingSession(session.id, "day", newMaxDay);
+                                        }
+                                      }
+                                    }}
+                                    disabled={pending || !session.year}
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Monat" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="1">Januar</SelectItem>
+                                      <SelectItem value="2">Februar</SelectItem>
+                                      <SelectItem value="3">März</SelectItem>
+                                      <SelectItem value="4">April</SelectItem>
+                                      <SelectItem value="5">Mai</SelectItem>
+                                      <SelectItem value="6">Juni</SelectItem>
+                                      <SelectItem value="7">Juli</SelectItem>
+                                      <SelectItem value="8">August</SelectItem>
+                                      <SelectItem value="9">September</SelectItem>
+                                      <SelectItem value="10">Oktober</SelectItem>
+                                      <SelectItem value="11">November</SelectItem>
+                                      <SelectItem value="12">Dezember</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                
+                                {/* Tag */}
+                                <div className="w-20">
+                                  <Input
+                                    type="number"
+                                    value={session.day || ""}
+                                    onChange={(e) =>
+                                      updateReadingSession(session.id, "day", e.target.value ? parseInt(e.target.value) : undefined)
+                                    }
+                                    placeholder="Tag"
+                                    disabled={pending || !session.year || !session.month}
+                                    min="1"
+                                    max={maxDay}
+                                  />
+                                </div>
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                Jahr ist erforderlich für Monat/Tag
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      </Card>
-                    ))}
+                        </Card>
+                      );
+                    })}
                     <Button
                       type="button"
                       variant="outline"
@@ -799,6 +949,9 @@ export function NewEntryForm({
             <div className="space-y-4">
               {availableFields.map((field) => {
                 if (field.isSeasonConfig || field.isReadingSession || field.isGamingSession) return null;
+
+                  // Überspringe Seitenanzahl - wird manuell oberhalb der Lese-Sessions gerendert
+                  if (category === "books" && field.name === "Seitenanzahl") return null;
                 
                 if (category === "series" && field.name === "Aktuelle Staffel") {
                   if (seasons.length === 0) {
@@ -1063,6 +1216,18 @@ export function NewEntryForm({
                 </label>
               </div>
 
+              <div className="space-y-2">
+                <Label>Anzahl der Durchläufe</Label>
+                <Input
+                  type="number"
+                  value={completionCount}
+                  onChange={(e) => setCompletionCount(Number(e.target.value))}
+                  placeholder="Wie oft abgeschlossen?"
+                  disabled={pending}
+                  min="0"
+                />
+              </div>
+
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="abandoned"
@@ -1082,7 +1247,11 @@ export function NewEntryForm({
 
           {/* Buttons */}
           <div className="flex gap-2 pt-4">
-            <Button type="submit" disabled={pending || !title} className="flex-1">
+            <Button 
+              type="submit" 
+              disabled={pending || !title || titleExists}
+              className="flex-1"
+            >
               {pending ? (
                 <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
               ) : isEditing ? (
@@ -1097,7 +1266,18 @@ export function NewEntryForm({
                 </>
               )}
             </Button>
-            <Button type="button" variant="outline" onClick={handleCancel} disabled={pending}>
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={() => {
+                if (!isEditing) {
+                  // Neuer Eintrag → Reset
+                  resetForm();
+                }
+                onCancelEdit?.();
+                setIsExpanded(false);
+              }}
+            >
               Abbrechen
             </Button>
           </div>
@@ -1106,7 +1286,6 @@ export function NewEntryForm({
     </Card>
   );
 }
-
 
 
 /*

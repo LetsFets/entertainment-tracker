@@ -1,12 +1,17 @@
-import { getServerSession } from "@/lib/auth-server";
 import { redirect } from "next/navigation";
+import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
 
-export default async function Home() {
-  // Server component, so we simply use the server side auth session info.
-  // Based on auth state, we redirect differently.
-  if (await getServerSession()) {
-    redirect("/home" as unknown as any);
-  } else {
-    redirect("/login" as unknown as any);
+export default async function RootPage() {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+
+  // Wenn eingeloggt → zu /home
+  if (session?.user) {
+    redirect("/home");
   }
+
+  // Sonst → zu /login
+  redirect("/login");
 }
