@@ -16,6 +16,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Media Tracker",
   description: "Track your media consumption",
+    generator: 'v0.app'
 };
 
 export default function RootLayout({

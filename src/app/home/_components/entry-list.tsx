@@ -1,24 +1,24 @@
-"use client";
+"use client"
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { IconTrash, IconEdit } from "@tabler/icons-react";
-import type { MediaEntry, Category } from "@/lib/types";  // <-- Category importieren!
-import { Badge } from "@/components/ui/badge";
-import Image from "next/image";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { IconTrash, IconEdit } from "@tabler/icons-react"
+import type { MediaEntry, Category } from "@/lib/types"
+import { Badge } from "@/components/ui/badge"
+import Image from "next/image"
+import {
+  formatFieldName,
+  calculateSeriesProgress,
+  calculatePodcastProgress,
+  calculateBookProgress,
+  calculateMovieProgress,
+  calculateTimeBar,
+} from "@/lib/media-utils"
 
 interface EntryListProps {
-  entries: MediaEntry[];
-  onDelete: (id: string, category: Category) => void;  // <-- Jetzt mit Category!
-  onEdit: (entry: MediaEntry) => void;
-}
-
-// Helper für case-insensitive Lookup
-function getField(entry: MediaEntry, fieldName: string): string | string[] | undefined {
-  const key = Object.keys(entry.categorySpecificFields).find(
-    k => k.toLowerCase() === fieldName.toLowerCase()
-  );
-  return key ? entry.categorySpecificFields[key] : undefined;
+  entries: MediaEntry[]
+  onDelete: (id: string, category: Category) => void
+  onEdit: (entry: MediaEntry) => void
 }
 
 export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
@@ -31,303 +31,53 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
           </p>
         </CardContent>
       </Card>
-    );
+    )
   }
-
-  // Formatiert einen DB-Schlüssel (z.B. "aktuelle_folge") in einen Anzeigenamen (z.B. "Aktuelle Folge")
-  const formatFieldName = (key: string): string => {
-    return key
-      .replace(/_/g, ' ')
-      .split(' ')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  };
-
-  const calculateSeriesProgress = (entry: MediaEntry): { text: string; percentage: number; seasonsInfo: string } | null => {
-    const seasonsData = getField(entry, "Staffeln");
-    const currentSeason = getField(entry, "Aktuelle Staffel");
-    const currentEpisode = getField(entry, "Aktuelle Folge");
-    
-    if (!seasonsData || !currentSeason || !currentEpisode ||
-        Array.isArray(currentSeason) || Array.isArray(currentEpisode)) {
-      return null;
-    }
-    
-    try {
-      // WICHTIG: seasonsData kann String ODER bereits Array sein!
-      let seasons: { seasonNumber: number; episodes: number }[];
-      
-      if (typeof seasonsData === 'string') {
-        seasons = JSON.parse(seasonsData);
-      } else if (Array.isArray(seasonsData)) {
-        // Normalize different possible array shapes (e.g. ["10","8"] or [{seasonNumber:1,episodes:10}, ...])
-        seasons = (seasonsData as any[]).map((s, idx) => {
-          if (typeof s === 'number' || typeof s === 'string') {
-            const episodes = Number(s);
-            return { seasonNumber: idx + 1, episodes: isNaN(episodes) ? 0 : episodes };
-          } else if (s && typeof s === 'object') {
-            const seasonNumber = 'seasonNumber' in s ? Number((s as any).seasonNumber) : idx + 1;
-            const episodes = 'episodes' in s ? Number((s as any).episodes) : 0;
-            return {
-              seasonNumber: isNaN(seasonNumber) ? idx + 1 : seasonNumber,
-              episodes: isNaN(episodes) ? 0 : episodes
-            };
-          } else {
-            return { seasonNumber: idx + 1, episodes: 0 };
-          }
-        });
-      } else {
-        return null;
-      }
-      
-      const currentS = parseInt(currentSeason as string);
-      const currentE = parseInt(currentEpisode as string);
-      
-      if (!Array.isArray(seasons) || seasons.length === 0 || currentS <= 0 || currentE < 0) {
-        return null;
-      }
-      
-      const totalEpisodes = seasons.reduce((sum, s) => sum + s.episodes, 0);
-      
-      let watchedEpisodes = 0;
-      for (let i = 0; i < currentS - 1 && i < seasons.length; i++) {
-        watchedEpisodes += seasons[i].episodes;
-      }
-      watchedEpisodes += currentE;
-      
-      const percentage = totalEpisodes > 0 ? Math.min((watchedEpisodes / totalEpisodes) * 100, 100) : 0;
-      
-      const seasonsInfo = seasons.map(s => `S${s.seasonNumber}: ${s.episodes} Folgen`).join(" • ");
-      
-      return {
-        text: `Staffel ${currentS}, Folge ${currentE}`,
-        percentage,
-        seasonsInfo
-      };
-    } catch (e) {
-      console.error("Fehler beim Verarbeiten der Staffel-Daten", e);
-      return null;
-    }
-  };
-
-  const calculatePodcastProgress = (entry: MediaEntry): { 
-    text: string; 
-    percentage: number;
-    currentMinute?: string;
-  } | null => {
-    const totalEpisodes = getField(entry, "Folgen gesamt");
-    const currentEpisode = getField(entry, "Aktuelle Folge");
-    const currentMinute = getField(entry, "Aktuelle Minute");
-    
-    if (totalEpisodes && currentEpisode && !Array.isArray(totalEpisodes) && !Array.isArray(currentEpisode)) {
-      const total = parseInt(totalEpisodes as string);
-      const current = parseInt(currentEpisode as string);
-      
-      if (total > 0 && current >= 0) {
-        const percentage = Math.min((current / total) * 100, 100);
-        
-        // Formatiere Text mit aktueller Minute (falls vorhanden)
-        let text = `Folge ${current} von ${total}`;
-        if (currentMinute && !Array.isArray(currentMinute)) {
-          const minute = parseInt(currentMinute as string);
-          if (minute > 0) {
-            text += ` (bei Min. ${minute})`;
-          }
-        }
-        
-        return {
-          text,
-          percentage
-        };
-      }
-    }
-    
-    return null;
-  };
-
-  const calculateBookProgress = (entry: MediaEntry): { 
-    text: string; 
-    segments: { pages: number; percentage: number; color: string; info: string }[];
-    totalPercentage: number;
-    sessionsInfo: string;
-  } | null => {
-    const totalPages = getField(entry, "Seitenanzahl");
-    const sessions = entry.readingSessions;
-    
-    if (!totalPages || Array.isArray(totalPages) || !sessions || sessions.length === 0) {
-      return null;
-    }
-    
-    const total = parseInt(totalPages as string);
-    
-    if (total <= 0) return null;
-    
-    const colors = [
-      "bg-blue-400", "bg-purple-400", "bg-teal-400", "bg-amber-400", "bg-rose-400",
-      "bg-emerald-400", "bg-indigo-400", "bg-cyan-400", "bg-orange-400", "bg-fuchsia-400",
-    ];
-    
-    const readPages = sessions.reduce((sum, s) => sum + s.pages, 0);
-    const totalPercentage = Math.min((readPages / total) * 100, 100);
-    
-    const segments = sessions.map((s, index) => {
-      const percentage = (s.pages / total) * 100;
-      const color = colors[index % colors.length];
-      
-      let dateStr = "";
-      if (s.year) {
-        dateStr = ` (${s.year}`;
-        if (s.month) {
-          dateStr += `-${String(s.month).padStart(2, '0')}`;
-          if (s.day) {
-            dateStr += `-${String(s.day).padStart(2, '0')}`;
-          }
-        }
-        dateStr += ")";
-      }
-      
-      return {
-        pages: s.pages,
-        percentage,
-        color,
-        info: `${s.pages} Seiten${dateStr}`
-      };
-    });
-    
-    const sessionsInfo = segments.map(s => s.info).join(" • ");
-    
-    return {
-      text: `${readPages} von ${total} Seiten`,
-      segments,
-      totalPercentage,
-      sessionsInfo
-    };
-  };
-
-  const calculateMovieProgress = (entry: MediaEntry): { text: string; percentage: number } | null => {
-    const totalMinutes = getField(entry, "Laufzeit");
-    const currentMinute = getField(entry, "Aktuelle Minute");
-    
-    if (!totalMinutes || !currentMinute || Array.isArray(totalMinutes) || Array.isArray(currentMinute)) {
-      return null;
-    }
-    
-    const total = parseInt(totalMinutes as string);
-    const current = parseInt(currentMinute as string);
-    
-    if (total > 0 && current >= 0 && current <= total) {
-      const percentage = (current / total) * 100;
-      return {
-        text: `${current} von ${total} Minuten`,
-        percentage
-      };
-    }
-    
-    return null;
-  };
-
-  const calculateTimeBar = (entry: MediaEntry): { 
-    totalTime: number;
-    basePlaytime: number;
-    segments: { duration: number; color: string; info: string }[];
-    sessionsInfo: string;
-  } | null => {
-    const basePlaytime = getField(entry, "Spielzeit");
-    const sessions = entry.gamingSessions;
-    
-    // Falls weder Spielzeit noch Sessions vorhanden sind, null zurückgeben
-    if (!basePlaytime && (!sessions || sessions.length === 0)) {
-      return null;
-    }
-    
-    const colors = [
-      "bg-blue-400","bg-purple-400","bg-teal-400","bg-amber-400","bg-rose-400",
-      "bg-emerald-400","bg-indigo-400","bg-cyan-400","bg-orange-400","bg-fuchsia-400"
-    ];
-    
-    const base = basePlaytime && !Array.isArray(basePlaytime) ? Number(basePlaytime) : 0;
-    const sessionTime = sessions ? sessions.reduce((sum, s) => sum + Number(s.duration), 0) : 0;
-    const totalTime = base + sessionTime;
-    
-    const segments: { duration: number; color: string; info: string }[] = [];
-    
-    // Basis-Spielzeit als erstes Segment (grau)
-    if (base > 0) {
-      segments.push({
-        duration: base,
-        color: "bg-gray-400",
-        info: `${base} h (Basis-Spielzeit)`
-      });
-    }
-    
-    // Sessions als weitere Segmente
-    if (sessions && sessions.length > 0) {
-      sessions.forEach((s, idx) => {
-        let dateStr = "";
-        if (s.year) {
-          dateStr = ` (${s.year}`;
-          if (s.month) {
-            dateStr += `-${String(s.month).padStart(2, '0')}`;
-            if (s.day) {
-              dateStr += `-${String(s.day).padStart(2, '0')}`;
-            }
-          }
-          dateStr += ")";
-        }
-        segments.push({
-          duration: s.duration,
-          color: colors[idx % colors.length],
-          info: `${s.duration} h${dateStr}`
-        });
-      });
-    }
-    
-    const sessionsInfo = segments.map(s => s.info).join(" • ");
-    return { totalTime, basePlaytime: base, segments, sessionsInfo };
-  };
 
   return (
     <div className="space-y-4">
       {entries.map((entry) => {
-        const seriesProgress = entry.category === "series" ? calculateSeriesProgress(entry) : null;
-        const podcastProgress = entry.category === "podcasts" ? calculatePodcastProgress(entry) : null;
-        const bookProgress = entry.category === "books" ? calculateBookProgress(entry) : null;
-        const movieProgress = entry.category === "movies" ? calculateMovieProgress(entry) : null;
-        const progress = seriesProgress || podcastProgress;
-        const timeBar = entry.category === "videogames" ? calculateTimeBar(entry) : null;
-        
+        const seriesProgress = entry.category === "series" ? calculateSeriesProgress(entry) : null
+        const podcastProgress = entry.category === "podcasts" ? calculatePodcastProgress(entry) : null
+        const bookProgress = entry.category === "books" ? calculateBookProgress(entry) : null
+        const movieProgress = entry.category === "movies" ? calculateMovieProgress(entry) : null
+        const progress = seriesProgress || podcastProgress
+        const timeBar = entry.category === "videogames" ? calculateTimeBar(entry) : null
+
         return (
           <Card key={entry.id}>
             <CardHeader className="pb-3">
               <div className="flex justify-between items-start gap-4">
                 <div className="flex-1 min-w-0">
                   <CardTitle className="text-lg mb-4">{entry.title}</CardTitle>
-                  
+
                   {progress && (
                     <div className="mb-4 space-y-2">
                       <div className="flex justify-between text-sm text-muted-foreground">
                         <span>Fortschritt</span>
-                        <span>{progress.text} ({Math.round(progress.percentage)}%)</span>
+                        <span>
+                          {progress.text} ({Math.round(progress.percentage)}%)
+                        </span>
                       </div>
                       <div className="w-full h-2 bg-secondary rounded-full overflow-hidden">
-                        <div 
+                        <div
                           className="h-full bg-primary transition-all duration-300"
                           style={{ width: `${progress.percentage}%` }}
                         />
                       </div>
                       {seriesProgress && (
-                        <div className="text-xs text-muted-foreground pt-1">
-                          {seriesProgress.seasonsInfo}
-                        </div>
+                        <div className="text-xs text-muted-foreground pt-1">{seriesProgress.seasonsInfo}</div>
                       )}
                     </div>
                   )}
-                  
+
                   {bookProgress && (
                     <div className="mb-4 space-y-2">
                       <div className="flex justify-between text-sm text-muted-foreground">
                         <span>Lesefortschritt</span>
-                        <span>{bookProgress.text} ({Math.round(bookProgress.totalPercentage)}%)</span>
+                        <span>
+                          {bookProgress.text} ({Math.round(bookProgress.totalPercentage)}%)
+                        </span>
                       </div>
                       <div className="w-full h-2 bg-secondary rounded-full overflow-hidden flex">
                         {bookProgress.segments.map((segment, idx) => (
@@ -354,7 +104,9 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
                     <div className="mb-4 space-y-2">
                       <div className="flex justify-between text-sm text-muted-foreground">
                         <span>Filmfortschritt</span>
-                        <span>{movieProgress.text} ({Math.round(movieProgress.percentage)}%)</span>
+                        <span>
+                          {movieProgress.text} ({Math.round(movieProgress.percentage)}%)
+                        </span>
                       </div>
                       <div className="w-full h-2 bg-secondary rounded-full overflow-hidden">
                         <div
@@ -369,7 +121,7 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
                     <div className="mb-4 space-y-2">
                       <div className="flex justify-between text-sm text-muted-foreground">
                         <span>Spielzeit</span>
-                        <span>{timeBar.totalTime} Stunden{timeBar.basePlaytime > 0 && timeBar.segments.length > 1 ? `` : ''}</span>
+                        <span>{timeBar.totalTime} Stunden</span>
                       </div>
                       <div className="w-full h-2 bg-secondary rounded-full overflow-hidden flex">
                         {timeBar.segments.map((segment, idx) => (
@@ -377,9 +129,7 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
                             key={idx}
                             className={`h-full ${segment.color} transition-all duration-300`}
                             style={{
-                              width: `${
-                                timeBar.totalTime === 0 ? 0 : (segment.duration / timeBar.totalTime) * 100
-                              }%`
+                              width: `${timeBar.totalTime === 0 ? 0 : (segment.duration / timeBar.totalTime) * 100}%`,
                             }}
                             title={segment.info}
                           />
@@ -395,120 +145,84 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
                       </div>
                     </div>
                   )}
-                  
-                {entry.category === "series" && (() => {
-                  const staffelnData = entry.categorySpecificFields["Staffeln"];
-                  if (staffelnData) {
-                    try {
-                      const seasons = typeof staffelnData === 'string' ? JSON.parse(staffelnData) : staffelnData;
-                      if (Array.isArray(seasons) && seasons.length > 0) {
-                        return (
-                          <p className="text-sm text-muted-foreground mb-2">
-                            <strong>Anzahl Staffeln:</strong> {seasons.length}
-                          </p>
-                        );
-                      }
-                    } catch {}
-                  }
-                  return null;
-                })()}
 
-                <div className="space-y-2 text-sm">
-                  {Object.entries(entry.categorySpecificFields)
-                    .filter(([key, value]) => {
-                      // Filtere leere Werte raus
-                      if (!value || (Array.isArray(value) && value.length === 0)) return false;
-                      
-                      const displayName = formatFieldName(key);
-                      const purelyProgressFields = ["Folgen gesamt", "Spielzeit", "Staffeln"]; // ← "Staffeln" hinzufügen
-                      if (purelyProgressFields.includes(displayName)) return false;
-                      
-                      return true;
-                    })
-                    .map(([key, value]) => {
-                      const displayName = formatFieldName(key);
-                      
-                      if (displayName === 'Staffeln') {
-                        try {
-                          const seasonsData = typeof value === 'string' ? JSON.parse(value) : value;
-                          if (Array.isArray(seasonsData) && seasonsData.length > 0) {
-                            return (
-                              <p key={key} className="text-muted-foreground">
-                                <strong>Anzahl Staffeln: {seasonsData.length}</strong>
-                              </p>
-                            );
-                          }
-                        } catch { /* Fail silently */ }
-                        return null;
-                      }
+                  <div className="space-y-2 text-sm">
+                    {Object.entries(entry.categorySpecificFields)
+                      .filter(([key, value]) => {
+                        if (!value || (Array.isArray(value) && value.length === 0)) return false
 
-                      if (displayName === 'Seitenanzahl') {
+                        const displayName = formatFieldName(key)
+                        const purelyProgressFields = ["Folgen gesamt", "Spielzeit", "Staffeln"]
+                        if (purelyProgressFields.includes(displayName)) return false
+
+                        return true
+                      })
+                      .map(([key, value]) => {
+                        const displayName = formatFieldName(key)
+
+                        if (displayName === "Seitenanzahl") {
+                          return (
+                            <p key={key} className="text-muted-foreground">
+                              {displayName}: {value} Seiten
+                            </p>
+                          )
+                        }
+
+                        if (displayName === "Laufzeit") {
+                          return (
+                            <p key={key} className="text-muted-foreground">
+                              {displayName}: {value} Minuten
+                            </p>
+                          )
+                        }
+
+                        if (Array.isArray(value)) {
+                          return (
+                            <div key={key} className="flex flex-wrap gap-1 items-center">
+                              <span className="text-muted-foreground mr-2">{displayName}:</span>
+                              {value.map((item, idx) => (
+                                <Badge key={idx} variant="secondary">
+                                  {item}
+                                </Badge>
+                              ))}
+                            </div>
+                          )
+                        }
+
                         return (
                           <p key={key} className="text-muted-foreground">
-                            {displayName}: {value} Seiten
+                            {displayName}: {value}
                           </p>
-                        );
-                      }
+                        )
+                      })
+                      .filter(Boolean)}
 
-                      if (displayName === 'Laufzeit') {
-                        return (
-                          <p key={key} className="text-muted-foreground">
-                            {displayName}: {value} Minuten
-                          </p>
-                        );
-                      }
-                      
-                      if (Array.isArray(value)) {
-                        return (
-                          <div key={key} className="flex flex-wrap gap-1 items-center">
-                            <span className="text-muted-foreground mr-2">{displayName}:</span>
-                            {value.map((item, idx) => (
-                              <Badge key={idx} variant="secondary">
-                                {item}
-                              </Badge>
-                            ))}
-                          </div>
-                        );
-                      }
-                      
-                      return (
-                        <p key={key} className="text-muted-foreground">
-                          {displayName}: {value}
-                        </p>
-                      );
-                    })
-                    .filter(Boolean) // Entferne alle null-Werte am Ende
-                  }
-                    
                     {entry.customFields.map((field, idx) => (
                       <p key={idx} className="text-muted-foreground">
                         {formatFieldName(field.name)}: {field.value}
                       </p>
                     ))}
-                    
+
                     <p className="pt-2">
-                      Status: <span className={
-                        entry.completed ? "text-green-600" :
-                        entry.abandoned ? "text-red-600" :
-                        "text-blue-600"
-                      }>
-                        {entry.completed ? "Abgeschlossen" :
-                        entry.abandoned ? "Abgebrochen" :
-                        "Aktiv"}
+                      Status:{" "}
+                      <span
+                        className={
+                          entry.completed ? "text-green-600" : entry.abandoned ? "text-red-600" : "text-blue-600"
+                        }
+                      >
+                        {entry.completed ? "Abgeschlossen" : entry.abandoned ? "Abgebrochen" : "Aktiv"}
                       </span>
-                        {(entry.completionCount ?? 0) > 0 && (
-                          <span className="ml-2 text-sm text-gray-500">
-                            ({entry.completionCount}x abgeschlossen)
-                          </span>
-                        )}
+                      {(entry.completionCount ?? 0) > 0 && (
+                        <span className="ml-2 text-sm text-gray-500">({entry.completionCount}x abgeschlossen)</span>
+                      )}
                     </p>
                   </div>
                 </div>
-                
+
                 {entry.image && (
                   <div className="relative w-20 h-32 sm:w-24 sm:h-36 md:w-28 md:h-42 lg:w-32 lg:h-48 rounded overflow-hidden border flex-shrink-0">
                     <Image
-                      src={entry.image}
+                      src={entry.image || "/placeholder.svg"}
                       alt={entry.title}
                       fill
                       className="object-cover"
@@ -516,7 +230,7 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
                     />
                   </div>
                 )}
-                
+
                 <div className="flex flex-col gap-2 flex-shrink-0">
                   <Button
                     variant="ghost"
@@ -529,7 +243,7 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => onDelete(entry.id, entry.category)}  // Beide Parameter!
+                    onClick={() => onDelete(entry.id, entry.category)}
                     className="text-destructive hover:text-destructive"
                   >
                     <IconTrash className="h-4 w-4" />
@@ -538,8 +252,8 @@ export function EntryList({ entries, onDelete, onEdit }: EntryListProps) {
               </div>
             </CardHeader>
           </Card>
-        );
+        )
       })}
     </div>
-  );
+  )
 }
