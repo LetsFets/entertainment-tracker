@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { NewEntryForm } from "./new-entry-form";
+import { NewEntryForm } from "./new-entry-form/new-entry-form";
 
 type Category = "books" | "series" | "movies" | "videogames" | "podcasts";
 
