@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { NewEntryForm } from "./_components/new-entry-form";
+import { NewEntryForm } from "./_components/new-entry-form/new-entry-form";
 import { EntryList } from "./_components/entry-list";
 import { StatisticsView } from "./_components/statistics-view";
 import { IconChartBar, IconLogout } from "@tabler/icons-react";
