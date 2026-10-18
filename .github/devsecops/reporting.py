@@ -28,6 +28,20 @@ def dalfox_markdown(result: dict, report_dir: Path, enforce: bool = False) -> st
              f'| AST-Hinweise [A] | {result.get("by_type",{}).get("A",0)} |',
              f'| Reflektionen [R] | {result.get("by_type",{}).get("R",0)} |',
              f'| Informative Hinweise [I] | {result.get("by_type",{}).get("I",0)} |', '']
+    preflight = report_dir / 'workspace-preflight.json'
+    if preflight.exists():
+        try:
+            cfg = json.loads(preflight.read_text(encoding='utf-8'))
+            if cfg.get('status') == 'NORMALIZED_COPY':
+                lines += ['## pnpm-Konfiguration', '',
+                          '⚠️ Die ursprüngliche Entertainment-Konfiguration hatte keine gültige '
+                          'Single-Package-Workspace-Definition oder enthielt offene Build-Freigaben. '
+                          '**Nur die temporäre Testkopie** wurde korrigiert.', '',
+                          'Korrekturen: ' + ', '.join(esc(v) for v in cfg.get('actions', [])) + '.', '',
+                          'Bitte `pnpm-workspace.yaml` auch im Originalprojekt korrigieren. '
+                          'Die statischen Prüfungen verwenden weiterhin den Originalstand.', '']
+        except (OSError, ValueError):
+            pass
     statuses = result.get('installations') or []
     if statuses:
         lines += ['## Abhängigkeitsinstallation', '',

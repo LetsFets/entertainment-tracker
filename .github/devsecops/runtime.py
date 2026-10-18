@@ -149,6 +149,65 @@ def pnpm_lockfile_outdated(log: Path) -> bool:
     ))
 
 
+def installation_error_hint(log: Path) -> str | None:
+    """Safe, actionable installation classification without echoing raw npm credentials."""
+    if not log.exists():
+        return None
+    tail = log.read_text(encoding='utf-8', errors='replace')[-64 * 1024:]
+    indicators = (
+        ('WORKSPACE_PACKAGES_MISSING', r'packages field missing or empty'),
+        ('WORKSPACE_BUILD_APPROVAL_INVALID', r'(?:allowBuilds.*(?:invalid|boolean)|Invalid.*allowBuilds)'),
+        ('REGISTRY_NETWORK_ERROR', r'\b(?:EAI_AGAIN|ENOTFOUND|ETIMEDOUT|ECONNRESET)\b'),
+        ('PACKAGE_FETCH_ERROR', r'\bERR_PNPM_FETCH_[0-9]+\b'),
+        ('NODE_ENGINE_INCOMPATIBLE', r'\bERR_PNPM_UNSUPPORTED_ENGINE\b'),
+    )
+    for name, pattern in indicators:
+        if re.search(pattern, tail, re.IGNORECASE | re.DOTALL):
+            return name
+    return None
+
+
+def normalize_entertainment_workspace(lockdir: Path, report_dir: Path) -> None:
+    """Fix known invalid *single-package* Entertainment workspace in the disposable scan copy.
+
+    pnpm 9 errors on settings-only pnpm-workspace.yaml lacking packages. Upstream
+    exported config also contains placeholder build decisions from pnpm 11.
+    The original checkout must never be modified by this operation.
+    """
+    workspace = lockdir / 'pnpm-workspace.yaml'
+    if not workspace.is_file():
+        return
+    original = workspace.read_text(encoding='utf-8')
+    updated = original
+    actions = []
+    if not re.search(r'^packages\s*:', updated, re.MULTILINE):
+        # The Entertainment Tracker is a single-package repository. Do not
+        # reinterpret other multi-package workspaces as single-package projects.
+        if not (lockdir / 'package.json').is_file():
+            raise RuntimeError('Entertainment: package.json fehlt neben pnpm-workspace.yaml')
+        updated = "packages:\n  - '.'\n\n" + updated
+        actions.append('packages_root_added')
+    # These are the two exact build-capable packages explicitly present in the
+    # uploaded project. Do not broadly allow unknown dependency build scripts.
+    for name in ('@tailwindcss/oxide', 'sharp'):
+        expr = r'(^\s*' + re.escape("'" + name + "'") + r'\s*:\s*|^\s*' + re.escape(name) + r'\s*:\s*)set this to true or false\s*$'
+        updated, n = re.subn(expr, lambda m: m.group(1) + 'true', updated, flags=re.MULTILINE)
+        if n:
+            actions.append('explicit_build_approval:' + name)
+    if 'set this to true or false' in updated:
+        raise RuntimeError('pnpm-workspace.yaml enthält weitere ungeklärte Build-Freigaben; '
+                           'bitte boolesche Werte true/false explizit festlegen.')
+    if updated != original:
+        workspace.write_text(updated, encoding='utf-8')
+        print('[http] entertainment: pnpm-Workspace-Konfiguration NUR in der Testkopie '
+              'bereinigt (' + ', '.join(actions) + ')', flush=True)
+    (report_dir / 'workspace-preflight.json').write_text(json.dumps({
+        'profile': 'entertainment', 'status': 'NORMALIZED_COPY' if actions else 'VALID',
+        'actions': actions, 'source_checkout_unchanged': True,
+        'pnpm_workspace_file': 'pnpm-workspace.yaml'
+    }, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+
+
 def install_package(pm: str, declaration: str | None, lockdir: Path,
                     env: dict[str, str], log: Path, report_dir: Path, service_name: str,
                     *, profile: str = '') -> None:
@@ -161,7 +220,7 @@ def install_package(pm: str, declaration: str | None, lockdir: Path,
     try:
         run_logged(cmd, lockdir, env, log)
     except RuntimeError as exc:
-        code = pnpm_error_code(log)
+        code = pnpm_error_code(log) or installation_error_hint(log)
         status.update({'status': 'ERROR', 'error_code': code, 'original_error': str(exc)})
         if pm == 'pnpm' and '--frozen-lockfile' in cmd and pnpm_lockfile_outdated(log):
             # Project copy is disposable. CI must not rewrite the source repository.
@@ -177,7 +236,7 @@ def install_package(pm: str, declaration: str | None, lockdir: Path,
             try:
                 run_logged(fallback, lockdir, env, log)
             except RuntimeError as retry_error:
-                status.update({'status': 'ERROR', 'retry_error_code': pnpm_error_code(log)})
+                status.update({'status': 'ERROR', 'retry_error_code': pnpm_error_code(log) or installation_error_hint(log)})
                 report.write_text(json.dumps(status, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
                 raise RuntimeError(f'{service_name}: pnpm-Lockfile-Reparatur fehlgeschlagen '
                                    f'({status["retry_error_code"] or "Exit ungleich 0"}). '
@@ -349,6 +408,8 @@ def serving(root: Path, dest: Path, config=None, selftest=False):
                 log = dest / f'{name}-install.log'
                 print(f'[http] {name}: Installiere ({pm if install == "auto" else "custom"})', flush=True)
                 if install == 'auto':
+                    if pm == 'pnpm' and conf.get('_profile') == 'entertainment':
+                        normalize_entertainment_workspace(lockdir, dest)
                     prepare_package_manager(pm, declaration, lockdir, directory, env, log)
                     install_package(pm, declaration, lockdir, env, log, dest, name,
                                     profile=conf.get('_profile', 'custom'))

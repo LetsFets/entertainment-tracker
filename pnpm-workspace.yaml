@@ -1,3 +1,9 @@
+# Single-package workspace; pnpm 9 needs an explicit packages entry.
+packages:
+  - '.'
+
+# Explicit approvals for the two existing build-time dependencies.
+# These booleans also work with newer pnpm releases.
 allowBuilds:
-  '@tailwindcss/oxide': set this to true or false
-  sharp: set this to true or false
+  '@tailwindcss/oxide': true
+  sharp: true
