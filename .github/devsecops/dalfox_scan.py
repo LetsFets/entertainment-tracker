@@ -115,6 +115,15 @@ def invoke_dalfox(url: str, headers: dict, output: Path, ordinal: int,
            '--timeout', '8', '--scan-timeout', '150', '--max-payloads-per-param', '180',
            '--skip-discovery', '--skip-mining', '--no-color', '--insecure=false',
            '--exclude-url', '(?i)(logout|sign-out|signout|delete|remove|payment|checkout)']
+    # --skip-discovery disables automatic parameter enumeration in Dalfox 3.
+    # Pass the exact URL query keys explicitly; otherwise a scan can return
+    # "OK" after a couple of HTTP requests without trying a single XSS payload.
+    # canonical_target() already limits these to local, configured input keys.
+    params = list(dict.fromkeys(key for key, _ in parse_qsl(urlsplit(url).query, keep_blank_values=True)))
+    if not params:
+        raise ValueError('Dalfox benötigt mindestens einen expliziten Query-Parameter')
+    for param in params:
+        cmd.extend(['--param', param])
     for k, v in headers.items():
         if k.lower() in ('cookie', 'authorization') and v:
             cmd.extend(['--headers', f'{k}: {v}'])

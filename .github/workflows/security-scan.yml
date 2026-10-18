@@ -1,4 +1,4 @@
-name: DevSecOps V9.2 - Security Pipeline (Dalfox XSS)
+name: DevSecOps V9.3 - Security Pipeline (Dalfox XSS)
 
 on:
   push:

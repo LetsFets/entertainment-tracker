@@ -122,6 +122,9 @@ class DalfoxContract(unittest.TestCase):
             def runner(cmd, **kw):
                 self.assertEqual(cmd[1], 'scan')
                 self.assertIn('--skip-discovery',cmd)
+                # Dalfox 3.2.4 otherwise tries no XSS payload on known q input.
+                self.assertIn('--param',cmd)
+                self.assertEqual(cmd[cmd.index('--param') + 1], 'q')
                 self.assertIn('--rate-limit',cmd)
                 path = Path(cmd[cmd.index('--output')+1])
                 path.write_text(json.dumps({'findings':[{'type':'V','param':'q'}],
@@ -136,7 +139,7 @@ class DalfoxContract(unittest.TestCase):
             with patch.object(d.subprocess, 'run', return_value=SimpleNamespace(
                     returncode=2,stdout='',stderr='untrusted output')):
                 with self.assertRaises(RuntimeError):
-                    d.invoke_dalfox(self.base, {}, Path(td), 1)
+                    d.invoke_dalfox(self.base+'?q=test', {}, Path(td), 1)
             self.assertNotIn('untrusted', (Path(td)/'dalfox-target-01.log').read_text())
 
     def test_json_without_findings_but_exit1_is_error(self):
@@ -147,7 +150,7 @@ class DalfoxContract(unittest.TestCase):
                 return SimpleNamespace(returncode=1,stdout='',stderr='')
             with patch.object(d.subprocess, 'run', side_effect=runner):
                 with self.assertRaises(RuntimeError):
-                    d.invoke_dalfox(self.base, {}, Path(td), 1)
+                    d.invoke_dalfox(self.base+'?q=test', {}, Path(td), 1)
 
     def test_cookie_header_not_printed_or_logged(self):
         with tempfile.TemporaryDirectory() as td:
@@ -157,7 +160,7 @@ class DalfoxContract(unittest.TestCase):
                   'findings':[], 'meta':{'total_requests':11,'target_summary':[{'status':'clean'}]}}))
                 return SimpleNamespace(returncode=0,stdout='',stderr='Cookie: SESSION-SUPER-SECRET')
             with patch.object(d.subprocess, 'run', side_effect=runner):
-                result=d.invoke_dalfox(self.base, {'Cookie':'SESSION-SUPER-SECRET'},Path(td),1)
+                result=d.invoke_dalfox(self.base+'?q=test', {'Cookie':'SESSION-SUPER-SECRET'},Path(td),1)
             self.assertEqual(result['requests'],11)
             self.assertNotIn('SUPER-SECRET',(Path(td)/'dalfox-target-01.log').read_text())
 

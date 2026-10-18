@@ -90,7 +90,8 @@ def configuration(root, profile, runtime):
         if profile == 'entertainment':
             # These are missing direct dependencies in the supplied manifest.
             # Added ONLY after frozen install, ONLY to the disposable scan copy.
-            extra = 'pnpm add --save-exact @libsql/client@0.15.15 && pnpm add -D --save-exact drizzle-kit@0.31.5 && '
+            extra = ('pnpm add --workspace-root --save-exact @libsql/client@0.15.15 && '
+                     'pnpm add --workspace-root --save-dev --save-exact drizzle-kit@0.31.5 && ')
         service['setup'] = extra + 'pnpm exec drizzle-kit push --config=devsecops.drizzle.config.ts --force'
         routes = ['/','/login','/signup','/privacy','/terms']
         routes += (['/dashboard','/dashboard/tasks','/dashboard/shopping','/dashboard/flatmates',

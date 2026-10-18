@@ -417,7 +417,7 @@ def serving(root: Path, dest: Path, config=None, selftest=False):
                     run_logged(['bash', '-lc', install], directory, env, log)
             if service.get('setup'):
                 print(f'[http] {name}: Initialisiere lokale Testdatenbank', flush=True)
-                run_logged(['bash', '-lc', service['setup']], directory, env,
+                run_logged(['bash', '-c', service['setup']], directory, env,
                            dest / f'{name}-setup.log', 300)
             command = (auto_start(root, directory, service['ready_url'], pm)
                        if service['start'] == 'auto' else ['bash', '-lc', service['start']])
