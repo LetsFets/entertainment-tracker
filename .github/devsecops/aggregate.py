@@ -90,6 +90,11 @@ def markdown(rows, enforce: bool, workflow_state: str = ''):
                     f'Verifizierte Hinweise [V]: **{d.get("verified",0)}**.', '']
             if d.get('status') == 'ERROR':
                 out += ['**Scannerfehler:** ' + escape(d.get('message', 'Unbekannt')), '']
+            for inst in d.get('installations', []):
+                if inst.get('status') == 'RECOVERED':
+                    out += ['**⚠️ Installationswarnung:** `pnpm-lock.yaml` musste in der '
+                            'isolierten Testkopie aktualisiert werden. Original-Lockfile '
+                            'im Repository angleichen und committen.', '']
             if d.get('findings'):
                 out += ['| XSS-Klasse | Risiko | Parameter | Ziel |', '|:--|:--|:--|:--|']
                 for f in d['findings'][:10]:

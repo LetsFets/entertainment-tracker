@@ -123,6 +123,78 @@ def run_logged(command: list[str], cwd: Path, env: dict[str, str], dest: Path, t
         raise RuntimeError(f'Befehl fehlgeschlagen (Exit-Code {done.returncode}): {shlex.join(command)}. Siehe {dest.name}')
 
 
+def pnpm_error_code(log: Path) -> str | None:
+    """Extract an error identifier without leaking raw installation output into a summary."""
+    if not log.exists():
+        return None
+    with log.open('rb') as handle:
+        handle.seek(0, os.SEEK_END)
+        size = handle.tell()
+        handle.seek(max(0, size - 128 * 1024))
+        contents = handle.read().decode('utf-8', errors='replace')
+    codes = re.findall(r'\bERR_PNPM_[A-Z0-9_]+\b', contents)
+    return codes[-1] if codes else None
+
+
+def pnpm_lockfile_outdated(log: Path) -> bool:
+    """Only outdated-lockfile errors may be retried; no generic insecure fallback."""
+    if not log.exists():
+        return False
+    contents = log.read_text(encoding='utf-8', errors='replace')[-128 * 1024:]
+    return bool(re.search(
+        r'ERR_PNPM_(?:OUTDATED_LOCKFILE|FROZEN_LOCKFILE_WITH_OUTDATED_LOCKFILE)'
+        r'|Cannot install with [\"\']?frozen-lockfile[\"\']? because '
+        r'pnpm-lock\.yaml is not up to date with',
+        contents, re.IGNORECASE,
+    ))
+
+
+def install_package(pm: str, declaration: str | None, lockdir: Path,
+                    env: dict[str, str], log: Path, report_dir: Path, service_name: str,
+                    *, profile: str = '') -> None:
+    """Strict first. Repair only an outdated pnpm lockfile in the disposable app copy."""
+    cmd = installed_command(pm, declaration, lockdir)
+    report = report_dir / f'{service_name}-install-status.json'
+    status: dict[str, Any] = {'package_manager': pm, 'profile': profile,
+                              'strict_command': shlex.join(cmd), 'status': 'IN_PROGRESS',
+                              'lockfile_repaired_in_test_copy': False}
+    try:
+        run_logged(cmd, lockdir, env, log)
+    except RuntimeError as exc:
+        code = pnpm_error_code(log)
+        status.update({'status': 'ERROR', 'error_code': code, 'original_error': str(exc)})
+        if pm == 'pnpm' and '--frozen-lockfile' in cmd and pnpm_lockfile_outdated(log):
+            # Project copy is disposable. CI must not rewrite the source repository.
+            fallback = ['pnpm', 'install', '--no-frozen-lockfile']
+            status.update({'status': 'RETRY', 'reason': 'Lockfile stimmt nicht mit Manifest ueberein',
+                           'retry_command': shlex.join(fallback)})
+            report.write_text(json.dumps(status, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+            with log.open('a', encoding='utf-8') as handle:
+                handle.write('\n[devsecops] Lockfile veraltet: nur in Wegwerf-Testkopie '
+                             'erneut mit --no-frozen-lockfile installieren.\n')
+            print(f'[http] {service_name}: Lockfile-Konflikt erkannt – '
+                  'neuer Versuch nur in der temporären Testkopie', flush=True)
+            try:
+                run_logged(fallback, lockdir, env, log)
+            except RuntimeError as retry_error:
+                status.update({'status': 'ERROR', 'retry_error_code': pnpm_error_code(log)})
+                report.write_text(json.dumps(status, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+                raise RuntimeError(f'{service_name}: pnpm-Lockfile-Reparatur fehlgeschlagen '
+                                   f'({status["retry_error_code"] or "Exit ungleich 0"}). '
+                                   f'Siehe {log.name}') from retry_error
+            status.update({'status': 'RECOVERED', 'lockfile_repaired_in_test_copy': True})
+            print(f'[http] {service_name}: pnpm-Installation nach Lockfile-Abgleich '
+                  'erfolgreich (Originalrepository unverändert)', flush=True)
+        else:
+            report.write_text(json.dumps(status, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+            raise RuntimeError(f'{service_name}: Abhängigkeitsinstallation fehlgeschlagen '
+                               f'({code or "Exit ungleich 0"}); kein Lockfile-Konflikt '
+                               f'für automatischen Retry. Siehe {log.name}') from exc
+    else:
+        status.update({'status': 'STRICT_OK'})
+    report.write_text(json.dumps(status, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+
+
 def prepare_package_manager(pm: str, declaration: str | None, lockdir: Path,
                             cwd: Path, env: dict[str, str], log: Path) -> None:
     if pm == 'npm':
@@ -278,7 +350,8 @@ def serving(root: Path, dest: Path, config=None, selftest=False):
                 print(f'[http] {name}: Installiere ({pm if install == "auto" else "custom"})', flush=True)
                 if install == 'auto':
                     prepare_package_manager(pm, declaration, lockdir, directory, env, log)
-                    run_logged(installed_command(pm, declaration, lockdir), lockdir, env, log)
+                    install_package(pm, declaration, lockdir, env, log, dest, name,
+                                    profile=conf.get('_profile', 'custom'))
                 else:
                     run_logged(['bash', '-lc', install], directory, env, log)
             if service.get('setup'):

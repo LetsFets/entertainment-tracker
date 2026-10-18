@@ -28,6 +28,27 @@ def dalfox_markdown(result: dict, report_dir: Path, enforce: bool = False) -> st
              f'| AST-Hinweise [A] | {result.get("by_type",{}).get("A",0)} |',
              f'| Reflektionen [R] | {result.get("by_type",{}).get("R",0)} |',
              f'| Informative Hinweise [I] | {result.get("by_type",{}).get("I",0)} |', '']
+    statuses = result.get('installations') or []
+    if statuses:
+        lines += ['## Abhängigkeitsinstallation', '',
+                  '| Dienst | Paketmanager | Installationsstatus | Ursache |',
+                  '|:--|:--|:--|:--|']
+        for inst in statuses:
+            status = inst.get('status', '?')
+            display = {'STRICT_OK': '✅ Lockfile-konform',
+                       'RECOVERED': '⚠️ Lockfile nur in Testkopie aktualisiert',
+                       'ERROR': '❌ Installation fehlgeschlagen'}.get(status, status)
+            lines.append('| ' + ' | '.join(esc(v) for v in (
+                inst.get('service','?'), inst.get('package_manager','?'), display,
+                inst.get('error_code') or '–')) + ' |')
+        if any(i.get('status') == 'RECOVERED' for i in statuses):
+            lines += ['', '**Wichtig:** `pnpm install --frozen-lockfile` war wegen eines veralteten '
+                      'Lockfiles nicht möglich. Ausschließlich die temporäre Kopie wurde mit '
+                      '`--no-frozen-lockfile` installiert. Bitte im Originalprojekt '
+                      '`pnpm install` ausführen und die aktualisierte `pnpm-lock.yaml` committen. '
+                      'Die statische Trivy-Prüfung bezieht sich weiterhin auf die '
+                      '**unveränderte Originaldatei**.', '']
+        lines.append('')
     if state == 'ERROR':
         lines += ['## Technischer Fehler', '',esc(result.get('message', 'Unbekannter Fehler')),
                   '', 'Bitte zuerst Installations-, Server- und Setup-Logs prüfen. '

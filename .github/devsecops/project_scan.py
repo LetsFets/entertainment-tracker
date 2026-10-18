@@ -88,6 +88,23 @@ def main() -> int:
     finally:
         if runtime is not None:
             remove_runtime(runtime,output)
+    # Also surface dependency-install warnings when the scanner itself succeeds.
+    # Raw logs stay in the artifact, only structured/non-secret status is summarized.
+    installations = []
+    for status_file in sorted(output.glob('*-install-status.json')):
+        try:
+            status = json.loads(status_file.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        if isinstance(status, dict):
+            installations.append({
+                'service': status_file.name.removesuffix('-install-status.json'),
+                'package_manager': status.get('package_manager'),
+                'status': status.get('status'),
+                'error_code': status.get('retry_error_code') or status.get('error_code'),
+                'repaired_in_test_copy': status.get('lockfile_repaired_in_test_copy', False),
+            })
+    result['installations'] = installations
     result['profile']=profile
     result['project']=('selftest' if args.selftest else args.project)
     (output/'summary.json').write_text(json.dumps(result,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
